@@ -2,7 +2,8 @@ from binary_reader import BinaryReader
 from dataclasses import dataclass, field
 
 from space import Size3D, Point3D, Cube
-from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism
+from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button
+from events import BlockEvent
 
 @dataclass
 class Level:
@@ -32,7 +33,8 @@ class Level:
     falling_platforms: list[FallingPlatform] = field(default_factory=list, repr=False)
     checkpoints: list[Checkpoint] = field(default_factory=list, repr=False)
     camera_triggers: list[CameraTrigger] = field(default_factory=list, repr=False)
-    prisms: list[Prism] = field(default_factory=list)
+    prisms: list[Prism] = field(default_factory=list, repr=False)
+    buttons: list[Button] = field(default_factory=list)
     
     @classmethod
     def read(cls, path):
@@ -108,6 +110,14 @@ class Level:
 
         fan_count = reader.read_uint16()  # deprecated
         assert fan_count == 0
+
+        block_event_count = reader.read_uint16()
+        block_events = [BlockEvent.read(reader) for _ in range(block_event_count)]
+
+        button_count = reader.read_uint16()
+        kwargs['buttons'] = [Button.read(reader) for _ in range(button_count)]
+        for button in kwargs['buttons']:
+            button.events = [block_events[i] for i in button.events]
 
         return cls(**kwargs)
 

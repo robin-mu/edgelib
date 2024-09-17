@@ -1,7 +1,10 @@
 from dataclasses import dataclass, field
+from enum import Enum
+
 from binary_reader import BinaryReader
 
 from space import Point3D, Size2D
+
 
 @dataclass
 class Waypoint:
@@ -41,6 +44,7 @@ class MovingPlatform:
 
         return cls(**kwargs)
 
+
 @dataclass
 class BumperSide:
     start_delay: int = -1
@@ -49,6 +53,7 @@ class BumperSide:
     @classmethod
     def read(cls, reader: BinaryReader):
         return cls(start_delay=reader.read_int16(), pulse_rate=reader.read_int16())
+
 
 @dataclass
 class Bumper:
@@ -70,7 +75,7 @@ class Bumper:
         kwargs['west'] = BumperSide.read(reader)
 
         return cls(**kwargs)
-    
+
 
 @dataclass
 class FallingPlatform:
@@ -91,6 +96,7 @@ class Checkpoint:
     @classmethod
     def read(cls, reader: BinaryReader):
         return cls(position=Point3D.read(reader), respawn_z=reader.read_int16(), radius=Size2D.read(reader))
+
 
 @dataclass
 class CameraTrigger:
@@ -121,6 +127,7 @@ class CameraTrigger:
 
         return cls(**kwargs)
 
+
 @dataclass
 class Prism:
     position: Point3D
@@ -133,3 +140,64 @@ class Prism:
         assert energy == 1
 
         return cls(position=position, energy=energy)
+
+
+class ButtonVisibility(Enum):
+    INVISIBLE = 0
+    VISIBLE = 1
+    SEMI_TRANSPARENT = 2
+
+class ButtonMode(Enum):
+    """
+    :cvar TOGGLE: When the button is released, it pops back up and all affected moving platforms move back to their original position
+    :cvar STAY_UP: The button can be pressed multiple times
+    :cvar STAY_DOWN: The button can only be pressed once, but can be re-enabled by other buttons
+    """
+    TOGGLE = 0
+    STAY_UP = 1
+    STAY_DOWN = 2
+
+@dataclass
+class Button:
+    """
+    :cvar disable_count: How many times the button can be disabled before it can no longer be re-enabled by other buttons (0 means infinite)
+    """
+    visible: ButtonVisibility = ButtonVisibility.VISIBLE
+    disable_count: int = 0
+    mode: ButtonMode = ButtonMode.STAY_DOWN
+
+    parent_id: int = -1
+    sequence_in_order: bool = False
+    siblings_count: int = 0
+
+    is_moving: bool = False
+    moving_platform_id: int = None
+    position: Point3D = None
+
+    events: list[int] = field(default_factory=list)
+
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        kwargs = {}
+        kwargs['visible'] = ButtonVisibility(reader.read_uint8())
+        kwargs['disable_count'] = reader.read_uint8()
+        kwargs['mode'] = ButtonMode(reader.read_uint8())
+        kwargs['parent_id'] = reader.read_int16()
+        kwargs['sequence_in_order'] = bool(reader.read_uint8())
+        kwargs['siblings_count'] = reader.read_uint8()
+        kwargs['is_moving'] = bool(reader.read_uint8())
+
+        if kwargs['is_moving']:
+            kwargs['moving_platform_id'] = reader.read_int16()
+        else:
+            kwargs['position'] = Point3D.read(reader)
+
+        event_count = reader.read_uint16()
+        kwargs['events'] = [reader.read_uint16() for _ in range(event_count)]
+
+        if kwargs['parent_id'] > 0:
+            assert kwargs['mode'] == ButtonMode.STAY_DOWN
+            assert event_count == 0
+            assert kwargs['siblings_count'] == 0
+
+        return cls(**kwargs)
