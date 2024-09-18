@@ -98,3 +98,34 @@ class AffectButtonEvent(BlockEvent):
     @start_behavior.setter
     def start_behavior(self, value):
         self._payload = value
+
+
+class Direction(Enum):
+    """
+    North is -Y or top-right
+    """
+    WEST = 0
+    EAST = 1
+    NORTH = 2
+    SOUTH = 3
+
+
+class KeyEventType(Enum):
+    DOWN = 0
+    UP = 1
+
+
+@dataclass
+class KeyEvent:
+    """
+    :cvar time_offset: The number of ticks from triggering the othercube to the key event being triggered
+    """
+    time_offset: int
+    direction: Direction
+    event_type: KeyEventType
+
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        return cls(time_offset=reader.read_uint16(),
+                   direction=Direction(reader.read_uint8()),
+                   event_type=KeyEventType(reader.read_uint8()))

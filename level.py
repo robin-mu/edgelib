@@ -1,9 +1,62 @@
 from binary_reader import BinaryReader
 from dataclasses import dataclass, field
+from enum import Enum
 
 from space import Size3D, Point3D, Cube
-from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button
-from events import BlockEvent
+from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, HoloCube, \
+    Resizer
+from events import BlockEvent, AffectMovingPlatformEvent
+
+
+class Theme(Enum):
+    WHITE = 0
+    LIGHT_GRAY = 1
+    DARK_GRAY = 2
+    BLACK = 3
+
+
+class MusicJava(Enum):
+    MENUS = 0
+    BRAINTONIK = 1
+    CUBE_DANCE = 2
+    ESSAI_2 = 3
+    ESSAI_01 = 4
+    TEST = 5
+    MYSTERYCUBE = 6
+    EDGE = 7
+    JUNGLE = 8
+    RETARD_TONIC = 9
+    OLDSCHOOL_SIMON = 10
+    PLANANT = 11
+
+
+class Music(Enum):
+    TITLE = 0
+    ETERNITY = 1
+    QUIET = 2
+    PAD = 3
+    JINGLE = 4
+    TEC = 5
+    KAKKOI = 6
+    DARK = 7
+    SQUADRON = 8
+    EIGHT_BITS = 9
+    PIXEL = 10
+    JUPITER = 11
+    SHAME = 12
+    DEBRIEF = 13
+    SPACE = 14
+    VOYAGE_GEOMETRIQUE = 15
+    MZONE = 16
+    R2 = 17
+    MYSTERY_CUBE = 18
+    DUTY = 19
+    PERFECT_CELL = 20
+    FUN = 21
+    LOL = 22
+    LOSTWAY = 23
+    WALL_STREET = 24
+
 
 @dataclass
 class Level:
@@ -17,13 +70,13 @@ class Level:
     a_time: int = 3
     b_time: int = 4
     c_time: int = 5
-    theme: int = 0
-    music_java: int = 0
-    music: int = 6
+    theme: Theme = Theme.WHITE
+    model_theme: Theme = theme
+    music_java: MusicJava = MusicJava.MENUS
+    music: Music = Music.KAKKOI
     zoom: int = -1
     angle_or_fov: int = 0
     is_angle: bool = False
-    model_theme: int = 0
 
     legacy_minimap: Cube = field(default_factory=Cube)
     collision_map: Cube = field(default_factory=Cube)
@@ -34,13 +87,15 @@ class Level:
     checkpoints: list[Checkpoint] = field(default_factory=list, repr=False)
     camera_triggers: list[CameraTrigger] = field(default_factory=list, repr=False)
     prisms: list[Prism] = field(default_factory=list, repr=False)
-    buttons: list[Button] = field(default_factory=list)
-    
+    buttons: list[Button] = field(default_factory=list, repr=False)
+    othercubes: list[HoloCube] = field(default_factory=list, repr=False)
+    resizers: list[Resizer] = field(default_factory=list, repr=False)
+
     @classmethod
     def read(cls, path):
         kwargs = {}
         with open(path, 'rb') as f:
-            reader = BinaryReader(f.read())
+            reader = BinaryReader(bytearray(f.read()))
 
         kwargs['id'] = reader.read_int32()
 
@@ -77,7 +132,7 @@ class Level:
         assert unknown_short_6 == 0
 
         kwargs['legacy_minimap'] = Cube.read(reader, Size3D(x=legacy_minimap_width, y=legacy_minimap_length, z=1))
-        
+
         kwargs['collision_map'] = Cube.read(reader, size)
 
         kwargs['spawn_point'] = Point3D.read(reader)
@@ -116,9 +171,29 @@ class Level:
 
         button_count = reader.read_uint16()
         kwargs['buttons'] = [Button.read(reader) for _ in range(button_count)]
+
+        # resolve block event references
+
         for button in kwargs['buttons']:
             button.events = [block_events[i] for i in button.events]
 
+        # extract button sequences
+
+        othercube_count = reader.read_uint16()
+        kwargs['othercubes'] = [HoloCube.read(reader) for _ in range(othercube_count)]
+        # resolve moving platform references
+
+        resizer_count = reader.read_uint16()
+        kwargs['resizers'] = [Resizer.read(reader) for _ in range(resizer_count)]
+
+        mini_block_count = reader.read_uint16()  # deprecated
+        assert mini_block_count == 0
+
+        kwargs['theme'] = Theme(reader.read_uint8())
+        kwargs['music_java'] = MusicJava(reader.read_uint8())
+        kwargs['music'] = Music(reader.read_uint8())
+
         return cls(**kwargs)
 
-print(Level.read('level300.bin'))
+
+print(Level.read('level309.bin'))

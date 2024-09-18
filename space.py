@@ -36,8 +36,8 @@ class Point3D:
 class Cube:
     data: np.ndarray = field(default_factory=lambda: np.zeros((1, 1, 1)))
 
-    def __getitem__(self, x, y, z):
-        return self.data[x, y, z]
+    def __getitem__(self, pos: tuple[int, int, int]):
+        return self.data[*pos]
 
     def __repr__(self):
         return f'Cube(size={tuple(reversed(self.data.shape))})'

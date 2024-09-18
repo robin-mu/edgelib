@@ -4,6 +4,7 @@ from enum import Enum
 from binary_reader import BinaryReader
 
 from space import Point3D, Size2D
+from events import KeyEvent
 
 
 @dataclass
@@ -57,6 +58,9 @@ class BumperSide:
 
 @dataclass
 class Bumper:
+    """
+    North is -Y or top-right
+    """
     position: Point3D
     enabled: bool = True
     north: BumperSide = field(default_factory=BumperSide)
@@ -147,6 +151,7 @@ class ButtonVisibility(Enum):
     VISIBLE = 1
     SEMI_TRANSPARENT = 2
 
+
 class ButtonMode(Enum):
     """
     :cvar TOGGLE: When the button is released, it pops back up and all affected moving platforms move back to their original position
@@ -156,6 +161,7 @@ class ButtonMode(Enum):
     TOGGLE = 0
     STAY_UP = 1
     STAY_DOWN = 2
+
 
 @dataclass
 class Button:
@@ -201,3 +207,59 @@ class Button:
             assert kwargs['siblings_count'] == 0
 
         return cls(**kwargs)
+
+
+@dataclass
+class HoloCube:
+    """
+    :cvar moving_block_sync: The ID of the moving platform to sync with. The holocube will start
+    moving when the specified moving platform reaches its first waypoint. A value of -1 means no sync.
+    """
+    position_trigger: Point3D
+    position_cube: Point3D
+    moving_block_sync: int = -1
+    key_events: list[KeyEvent] = field(default_factory=list)
+
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        kwargs = {}
+        dark_cube = False
+
+        kwargs['position_trigger'] = Point3D.read(reader)
+        kwargs['moving_block_sync'] = reader.read_int16()
+        if kwargs['moving_block_sync'] == -2:  # dark cube
+            dark_cube = True
+            kwargs['radius'] = Size2D.read(reader)
+            kwargs['moving_block_sync'] = reader.read_int16()
+
+        key_event_count = reader.read_uint16()
+        kwargs['position_cube'] = Point3D.read(reader)
+        kwargs['key_events'] = [KeyEvent.read(reader) for _ in range(key_event_count)]
+
+        if dark_cube:
+            return DarkCube(**kwargs)
+        else:
+            return HoloCube(**kwargs)
+
+
+@dataclass
+class DarkCube(HoloCube):
+    radius: Size2D = field(default_factory=Size2D)
+
+
+class ResizerDirection(Enum):
+    SHRINK = 0
+    GROW = 1
+
+
+@dataclass
+class Resizer:
+    position: Point3D
+    direction: ResizerDirection
+    visible: bool = True
+
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        return cls(position=Point3D.read(reader),
+                   visible=bool(reader.read_uint8()),
+                   direction=ResizerDirection(reader.read_uint8()))
