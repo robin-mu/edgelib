@@ -4,7 +4,7 @@ from enum import Enum
 
 from space import Size3D, Point3D, Cube
 from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, HoloCube, \
-    Resizer
+    Resizer, ButtonSequence
 from events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
 
 
@@ -88,6 +88,7 @@ class Level:
     camera_triggers: list[CameraTrigger] = field(default_factory=list, repr=False)
     prisms: list[Prism] = field(default_factory=list, repr=False)
     buttons: list[Button] = field(default_factory=list, repr=False)
+    button_sequences: list[ButtonSequence] = field(default_factory=list, repr=False)
     othercubes: list[HoloCube] = field(default_factory=list, repr=False)
     resizers: list[Resizer] = field(default_factory=list, repr=False)
 
@@ -188,6 +189,18 @@ class Level:
                 button.moving_platform = kwargs['moving_platforms'][button.moving_platform]
 
         # extract button sequences
+        kwargs['button_sequences'] = []
+        for id, button in enumerate(kwargs['buttons']):
+            if button._children_count > 0:
+                children = [b for b in kwargs['buttons'] if b._parent_id == id]
+                events = button.events
+                button.events = []
+                kwargs['button_sequences'].append(ButtonSequence(buttons=[button] + children,
+                                                                 sequence_in_order=button._sequence_in_order,
+                                                                 events=events))
+
+        # remove elements which are part of a button sequence from buttons
+        kwargs['buttons'] = [b for b in kwargs['buttons'] if b._children_count == 0 and b._parent_id == -1]
 
         othercube_count = reader.read_uint16()
         kwargs['othercubes'] = [HoloCube.read(reader) for _ in range(othercube_count)]
@@ -210,4 +223,4 @@ class Level:
         return cls(**kwargs)
 
 
-print(Level.read('level36.bin').othercubes)
+print(Level.read('babylonian_817.bin').buttons)

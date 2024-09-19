@@ -5,7 +5,7 @@ from types import NoneType
 from binary_reader import BinaryReader
 
 from space import Point3D, Size2D
-from events import KeyEvent
+from events import KeyEvent, BlockEvent
 
 
 @dataclass
@@ -173,9 +173,9 @@ class Button:
     disable_count: int = 0
     mode: ButtonMode = ButtonMode.STAY_DOWN
 
-    parent_id: int = -1
-    sequence_in_order: bool = False
-    siblings_count: int = 0
+    _parent_id: int = -1
+    _sequence_in_order: bool = False
+    _children_count: int = 0
 
     _is_moving: bool = False
     moving_platform: MovingPlatform = None
@@ -189,9 +189,9 @@ class Button:
         kwargs['visible'] = ButtonVisibility(reader.read_uint8())
         kwargs['disable_count'] = reader.read_uint8()
         kwargs['mode'] = ButtonMode(reader.read_uint8())
-        kwargs['parent_id'] = reader.read_int16()
-        kwargs['sequence_in_order'] = bool(reader.read_uint8())
-        kwargs['siblings_count'] = reader.read_uint8()
+        kwargs['_parent_id'] = reader.read_int16()
+        kwargs['_sequence_in_order'] = bool(reader.read_uint8())
+        kwargs['_children_count'] = reader.read_uint8()
         kwargs['_is_moving'] = bool(reader.read_uint8())
 
         if kwargs['_is_moving']:
@@ -202,12 +202,24 @@ class Button:
         event_count = reader.read_uint16()
         kwargs['events'] = [reader.read_uint16() for _ in range(event_count)]
 
-        if kwargs['parent_id'] > 0:
+        if kwargs['_parent_id'] > 0:
             assert kwargs['mode'] == ButtonMode.STAY_DOWN
             assert event_count == 0
-            assert kwargs['siblings_count'] == 0
+            assert kwargs['_children_count'] == 0
 
         return cls(**kwargs)
+
+
+@dataclass
+class ButtonSequence:
+    """
+    :cvar buttons: A list that has to contain at least 2 ``Button``. All buttons should have
+    ``mode = ButtonMode.STAY_DOWN`` and no events set.
+    :cvar events: A list of BlockEvents that are triggered when all buttons of the sequence are pressed.
+    """
+    buttons: list[Button]
+    sequence_in_order: bool = False
+    events: list[BlockEvent] = field(default_factory=list)
 
 
 @dataclass
