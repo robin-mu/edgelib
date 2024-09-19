@@ -1,8 +1,14 @@
-from dataclasses import dataclass, field
+from __future__ import annotations
+
+from dataclasses import dataclass
 from enum import Enum
 
 from binary_reader import BinaryReader
 
+# avoid cyclic imports
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from dynamic_parts import MovingPlatform, Bumper, Button
 
 class BlockEventType(Enum):
     AFFECT_MOVING_PLATFORM = 0
@@ -27,11 +33,7 @@ class ButtonStartType(Enum):
     UP = 1
 
 
-@dataclass
 class BlockEvent:
-    id: int
-    _payload: int = field(init=False, repr=False)
-
     @classmethod
     def read(cls, reader: BinaryReader):
         type = BlockEventType(reader.read_uint8())
@@ -39,65 +41,36 @@ class BlockEvent:
         payload = reader.read_uint16()
 
         if type == BlockEventType.AFFECT_MOVING_PLATFORM:
-            return AffectMovingPlatformEvent(id, traverse_waypoints=payload)
+            return AffectMovingPlatformEvent(moving_platform=id, traverse_waypoints=payload)
         elif type == BlockEventType.AFFECT_BUMPER:
-            return AffectBumperEvent(id, event=BumperEventType(payload))
+            return AffectBumperEvent(bumper=id, event=BumperEventType(payload))
         elif type == BlockEventType.TRIGGER_ACHIEVEMENT:
-            return TriggerAchievementEvent(id, metadata=payload)
+            return TriggerAchievementEvent(achievement_id=id, metadata=payload)
         elif type == BlockEventType.AFFECT_BUTTON:
-            return AffectButtonEvent(id, start_behavior=ButtonStartType(payload))
-
+            return AffectButtonEvent(button=id, start_behavior=ButtonStartType(payload))
 
 @dataclass
 class AffectMovingPlatformEvent(BlockEvent):
+    moving_platform: MovingPlatform
     traverse_waypoints: int
-
-    @property
-    def traverse_waypoints(self):
-        return self._payload
-
-    @traverse_waypoints.setter
-    def traverse_waypoints(self, value):
-        self._payload = value
 
 
 @dataclass
 class AffectBumperEvent(BlockEvent):
+    bumper: Bumper
     event: BumperEventType
-
-    @property
-    def event(self):
-        return self._payload
-
-    @event.setter
-    def event(self, value):
-        self._payload = value
 
 
 @dataclass
 class TriggerAchievementEvent(BlockEvent):
+    achievement_id: int
     metadata: int
-
-    @property
-    def metadata(self):
-        return self._payload
-
-    @metadata.setter
-    def metadata(self, value):
-        self._payload = value
 
 
 @dataclass
 class AffectButtonEvent(BlockEvent):
+    button: Button
     start_behavior: ButtonStartType
-
-    @property
-    def start_behavior(self):
-        return self._payload
-
-    @start_behavior.setter
-    def start_behavior(self, value):
-        self._payload = value
 
 
 class Direction(Enum):

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from types import NoneType
 
 from binary_reader import BinaryReader
 
@@ -176,8 +177,8 @@ class Button:
     sequence_in_order: bool = False
     siblings_count: int = 0
 
-    is_moving: bool = False
-    moving_platform_id: int = None
+    _is_moving: bool = False
+    moving_platform: MovingPlatform = None
     position: Point3D = None
 
     events: list[int] = field(default_factory=list)
@@ -191,10 +192,10 @@ class Button:
         kwargs['parent_id'] = reader.read_int16()
         kwargs['sequence_in_order'] = bool(reader.read_uint8())
         kwargs['siblings_count'] = reader.read_uint8()
-        kwargs['is_moving'] = bool(reader.read_uint8())
+        kwargs['_is_moving'] = bool(reader.read_uint8())
 
-        if kwargs['is_moving']:
-            kwargs['moving_platform_id'] = reader.read_int16()
+        if kwargs['_is_moving']:
+            kwargs['moving_platform'] = reader.read_int16()
         else:
             kwargs['position'] = Point3D.read(reader)
 
@@ -217,7 +218,7 @@ class HoloCube:
     """
     position_trigger: Point3D
     position_cube: Point3D
-    moving_block_sync: int = -1
+    moving_block_sync: MovingPlatform | NoneType = None
     key_events: list[KeyEvent] = field(default_factory=list)
 
     @classmethod
@@ -226,11 +227,13 @@ class HoloCube:
         dark_cube = False
 
         kwargs['position_trigger'] = Point3D.read(reader)
-        kwargs['moving_block_sync'] = reader.read_int16()
-        if kwargs['moving_block_sync'] == -2:  # dark cube
+        moving_block_sync = reader.read_int16()
+        if moving_block_sync == -2:  # dark cube
             dark_cube = True
             kwargs['radius'] = Size2D.read(reader)
-            kwargs['moving_block_sync'] = reader.read_int16()
+            moving_block_sync = reader.read_int16()
+
+        kwargs['moving_block_sync'] = None if moving_block_sync == -1 else moving_block_sync
 
         key_event_count = reader.read_uint16()
         kwargs['position_cube'] = Point3D.read(reader)

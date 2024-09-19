@@ -5,7 +5,7 @@ from enum import Enum
 from space import Size3D, Point3D, Cube
 from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, HoloCube, \
     Resizer
-from events import BlockEvent, AffectMovingPlatformEvent
+from events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
 
 
 class Theme(Enum):
@@ -172,16 +172,30 @@ class Level:
         button_count = reader.read_uint16()
         kwargs['buttons'] = [Button.read(reader) for _ in range(button_count)]
 
-        # resolve block event references
+        # resolve references in block events
+        for event in block_events:
+            if isinstance(event, AffectMovingPlatformEvent):
+                event.moving_platform = kwargs['moving_platforms'][event.moving_platform]
+            elif isinstance(event, AffectBumperEvent):
+                event.bumper = kwargs['bumpers'][event.bumper]
+            elif isinstance(event, AffectButtonEvent):
+                event.button = kwargs['buttons'][event.button]
 
+        # resolve references in buttons
         for button in kwargs['buttons']:
             button.events = [block_events[i] for i in button.events]
+            if button.moving_platform:
+                button.moving_platform = kwargs['moving_platforms'][button.moving_platform]
 
         # extract button sequences
 
         othercube_count = reader.read_uint16()
         kwargs['othercubes'] = [HoloCube.read(reader) for _ in range(othercube_count)]
-        # resolve moving platform references
+
+        # resolve references in other cubes
+        for cube in kwargs['othercubes']:
+            if cube.moving_block_sync:
+                cube.moving_block_sync = kwargs['moving_platforms'][cube.moving_block_sync]
 
         resizer_count = reader.read_uint16()
         kwargs['resizers'] = [Resizer.read(reader) for _ in range(resizer_count)]
@@ -196,4 +210,4 @@ class Level:
         return cls(**kwargs)
 
 
-print(Level.read('level309.bin'))
+print(Level.read('level36.bin').othercubes)
