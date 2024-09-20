@@ -23,12 +23,17 @@ class Waypoint:
 
         return cls(**kwargs)
 
+    def write(self, writer: BinaryReader):
+        self.position.write(writer)
+        writer.write_uint16(self.travel_time)
+        writer.write_uint16(self.pause_time)
+
 
 @dataclass
 class MovingPlatform:
     auto_start: bool = True
     loop_start_index: int = 1
-    clones: int = field(default=-1, repr=False)  # deprecated
+    _clones: int = field(default=-1, repr=False)  # deprecated
     full_block: bool = True
     waypoints: list[Waypoint] = field(default_factory=list, repr=False)
 
@@ -37,14 +42,23 @@ class MovingPlatform:
         kwargs = {}
         kwargs['auto_start'] = bool(reader.read_uint8())
         kwargs['loop_start_index'] = reader.read_uint8()
-        kwargs['clones'] = reader.read_int16()
-        assert kwargs['clones'] == -1
+        kwargs['_clones'] = reader.read_int16()
+        assert kwargs['_clones'] == -1
         kwargs['full_block'] = bool(reader.read_uint8())
 
         waypoint_count = reader.read_uint8()
         kwargs['waypoints'] = [Waypoint.read(reader) for _ in range(waypoint_count)]
 
         return cls(**kwargs)
+
+    def write(self, writer: BinaryReader):
+        writer.write_uint8(self.auto_start)  # maybe 2 if True
+        writer.write_uint8(self.loop_start_index)
+        writer.write_int16(self._clones)
+        writer.write_uint8(self.full_block)
+        writer.write_uint8(len(self.waypoints))
+        for w in self.waypoints:
+            w.write(writer)
 
 
 @dataclass
@@ -55,6 +69,10 @@ class BumperSide:
     @classmethod
     def read(cls, reader: BinaryReader):
         return cls(start_delay=reader.read_int16(), pulse_rate=reader.read_int16())
+
+    def write(self, writer: BinaryReader):
+        writer.write_int16(self.start_delay)
+        writer.write_int16(self.pulse_rate)
 
 
 @dataclass
@@ -81,6 +99,14 @@ class Bumper:
 
         return cls(**kwargs)
 
+    def write(self, writer: BinaryReader):
+        writer.write_uint8(self.enabled)
+        self.position.write(writer)
+        self.north.write(writer)
+        self.east.write(writer)
+        self.south.write(writer)
+        self.west.write(writer)
+
 
 @dataclass
 class FallingPlatform:
@@ -90,6 +116,10 @@ class FallingPlatform:
     @classmethod
     def read(cls, reader: BinaryReader):
         return cls(position=Point3D.read(reader), float_time=reader.read_uint16())
+
+    def write(self, writer: BinaryReader):
+        self.position.write(writer)
+        writer.write_uint16(self.float_time)
 
 
 @dataclass
@@ -101,6 +131,11 @@ class Checkpoint:
     @classmethod
     def read(cls, reader: BinaryReader):
         return cls(position=Point3D.read(reader), respawn_z=reader.read_int16(), radius=Size2D.read(reader))
+
+    def write(self, writer: BinaryReader):
+        self.position.write(writer)
+        writer.write_int16(self.respawn_z)
+        self.radius.write(writer)
 
 
 @dataclass
@@ -132,6 +167,19 @@ class CameraTrigger:
 
         return cls(**kwargs)
 
+    def write(self, writer: BinaryReader):
+        self.position.write(writer)
+        writer.write_int16(self.zoom)
+        self.radius.write(writer)
+        if self.zoom != -1:
+            return
+        writer.write_uint8(self.reset)
+        writer.write_uint16(self.start_delay)
+        writer.write_uint16(self.duration)
+        writer.write_int16(self.angle_or_fov)
+        writer.write_uint8(self.single_use)
+        writer.write_uint8(self.is_angle)
+
 
 @dataclass
 class Prism:
@@ -145,6 +193,10 @@ class Prism:
         assert energy == 1
 
         return cls(position=position, energy=energy)
+
+    def write(self, writer: BinaryReader):
+        self.position.write(writer)
+        writer.write_uint8(self.energy)
 
 
 class ButtonVisibility(Enum):

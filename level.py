@@ -110,7 +110,7 @@ class Level:
         kwargs['c_time'] = reader.read_uint16()
         assert kwargs['s_plus_time'] < kwargs['s_time'] < kwargs['a_time'] < kwargs['b_time'] < kwargs['c_time']
 
-        prisms_count = reader.read_int16()
+        prisms_count = reader.read_uint16()
 
         size = Size3D.read(reader)
         kwargs['size'] = size
@@ -137,6 +137,7 @@ class Level:
         kwargs['collision_map'] = Cube.read(reader, size)
 
         kwargs['spawn_point'] = Point3D.read(reader)
+        assert kwargs['spawn_point'].z >= -20
 
         kwargs['zoom'] = reader.read_int16()
         if kwargs['zoom'] < 0:
@@ -222,5 +223,76 @@ class Level:
 
         return cls(**kwargs)
 
+    def write(self, path):
+        writer = BinaryReader()
+        writer.write_int32(self.id)
+        writer.write_int32(len(self.name))
+        writer.write_str(self.name)
 
-print(Level.read('babylonian_817.bin').buttons)
+        writer.write_uint16(self.s_plus_time)
+        writer.write_uint16(self.s_time)
+        writer.write_uint16(self.a_time)
+        writer.write_uint16(self.b_time)
+        writer.write_uint16(self.c_time)
+
+        writer.write_uint16(len(self.prisms))
+
+        self.size.write(writer)
+
+        unknown_short_1 = self.size.x + self.size.y
+        unknown_short_2 = unknown_short_1 + 2 * self.size.z
+        legacy_minimap_width = (unknown_short_1 + 9) // 10
+        legacy_minimap_length = (unknown_short_2 + 9) // 10
+        unknown_byte_1 = 10
+        unknown_short_5 = self.size.y - 1
+        unknown_short_6 = 0
+
+        writer.write_uint16(unknown_short_1)
+        writer.write_uint16(unknown_short_2)
+        writer.write_uint16(legacy_minimap_width)
+        writer.write_uint16(legacy_minimap_length)
+        writer.write_uint8(unknown_byte_1)
+        writer.write_uint16(unknown_short_5)
+        writer.write_uint16(unknown_short_6)
+
+        self.legacy_minimap.write(writer)
+        self.collision_map.write(writer)
+        self.spawn_point.write(writer)
+
+        writer.write_int16(self.zoom)
+        if self.zoom < 0:
+            writer.write_int16(self.angle_or_fov)
+            writer.write_uint8(self.is_angle)
+
+        self.exit_point.write(writer)
+
+        writer.write_uint16(len(self.moving_platforms))
+        for e in self.moving_platforms:
+            e.write(writer)
+
+        writer.write_uint16(len(self.bumpers))
+        for e in self.bumpers:
+            e.write(writer)
+
+        writer.write_uint16(len(self.falling_platforms))
+        for e in self.falling_platforms:
+            e.write(writer)
+
+        writer.write_uint16(len(self.checkpoints))
+        for e in self.checkpoints:
+            e.write(writer)
+
+        writer.write_uint16(len(self.camera_triggers))
+        for e in self.camera_triggers:
+            e.write(writer)
+
+        writer.write_uint16(len(self.prisms))
+        for e in self.prisms:
+            e.write(writer)
+
+        writer.write_uint16(len(self.prisms))
+        for e in self.prisms:
+            e.write(writer)
+
+
+print(Level.read('level300.bin'))
