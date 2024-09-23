@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 from binary_reader import BinaryReader
@@ -32,8 +32,13 @@ class ButtonStartType(Enum):
     DOWN = 0
     UP = 1
 
-
+@dataclass
 class BlockEvent:
+    """
+    :cvar _id: This is only used internally when writing a level and should not be changed manually
+    """
+    _id: int = field(default=None, init=False, repr=False)
+
     @classmethod
     def read(cls, reader: BinaryReader):
         type = BlockEventType(reader.read_uint8())
@@ -51,8 +56,16 @@ class BlockEvent:
 
 @dataclass
 class AffectMovingPlatformEvent(BlockEvent):
+    """
+    :cvar traverse_waypoints: 0 means traverse all waypoints
+    """
     moving_platform: MovingPlatform
     traverse_waypoints: int
+
+    def write(self, writer: BinaryReader):
+        writer.write_uint8(0)  # block event type: affect moving platform
+        writer.write_int16(self.moving_platform._id)
+        writer.write_uint16(self.traverse_waypoints)
 
 
 @dataclass
@@ -60,17 +73,31 @@ class AffectBumperEvent(BlockEvent):
     bumper: Bumper
     event: BumperEventType
 
+    def write(self, writer: BinaryReader):
+        writer.write_uint8(1)  # block event type: affect bumper
+        writer.write_int16(self.bumper._id)
+        writer.write_uint16(self.event.value)
+
 
 @dataclass
 class TriggerAchievementEvent(BlockEvent):
     achievement_id: int
     metadata: int
 
+    def write(self, writer: BinaryReader):
+        writer.write_uint8(2)  # block event type: trigger achievement
+        writer.write_int16(self.achievement_id)
+        writer.write_uint16(self.metadata)
 
 @dataclass
 class AffectButtonEvent(BlockEvent):
     button: Button
     start_behavior: ButtonStartType
+
+    def write(self, writer: BinaryReader):
+        writer.write_uint8(3) # block event type: affect button
+        writer.write_int16(self.button._id)
+        writer.write_uint16(self.start_behavior.value)
 
 
 class Direction(Enum):
@@ -102,3 +129,8 @@ class KeyEvent:
         return cls(time_offset=reader.read_uint16(),
                    direction=Direction(reader.read_uint8()),
                    event_type=KeyEventType(reader.read_uint8()))
+
+    def write(self, writer: BinaryReader):
+        writer.write_uint16(self.time_offset)
+        writer.write_uint8(self.direction.value)
+        writer.write_uint8(self.event_type.value)

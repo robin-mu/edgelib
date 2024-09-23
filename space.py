@@ -31,6 +31,11 @@ class Size3D:
         writer.write_uint16(self.x)
         writer.write_uint16(self.y)
 
+    def __eq__(self, other):
+        if isinstance(other, Size3D):
+            return self.x == other.x and self.y == other.y and self.z == other.z
+        return self.x == other[0] and self.y == other[1] and self.z == other[2]
+
 @dataclass
 class Point3D:
     x: int
@@ -48,13 +53,15 @@ class Point3D:
 
 @dataclass
 class Cube:
-    data: np.ndarray = field(default_factory=lambda: np.zeros((1, 1, 1)))
+    size: Size3D
+    data: np.ndarray = field(default=None, repr=False)
+
+    def __post_init__(self):
+        if self.data is None:
+            self.data = np.zeros((self.size.z, self.size.y, self.size.x))
 
     def __getitem__(self, pos: tuple[slice, slice, slice]):
         return self.data[*reversed(pos)]
-
-    def __repr__(self):
-        return f'Cube(size={tuple(reversed(self.data.shape))})'
 
     @classmethod
     def read(cls, reader: BinaryReader, size: Size3D):
@@ -65,8 +72,9 @@ class Cube:
         for i in range(size.z):
             data[i] = np.reshape(BitArray(reader.read_bytes(bytes_per_layer))[:layer_length], (size.y, size.x))
 
-        return cls(data)
+        return cls(size, data)
 
     def write(self, writer: BinaryReader):
-        for i in range(self.data.shape[0]):
+        assert self.size == tuple(reversed(self.data.shape))
+        for i in range(self.size.z):
             writer.write_bytes(BitArray(self.data[i].flatten()).tobytes())

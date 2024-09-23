@@ -1,11 +1,13 @@
-from binary_reader import BinaryReader
+import time
 from dataclasses import dataclass, field
 from enum import Enum
 
-from space import Size3D, Point3D, Cube
+from binary_reader import BinaryReader
+
 from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, HoloCube, \
-    Resizer, ButtonSequence
+    Resizer, ButtonSequence, ButtonMode
 from events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
+from space import Size3D, Point3D, Cube
 
 
 class Theme(Enum):
@@ -78,8 +80,8 @@ class Level:
     angle_or_fov: int = 0
     is_angle: bool = False
 
-    legacy_minimap: Cube = field(default_factory=Cube)
-    collision_map: Cube = field(default_factory=Cube)
+    _legacy_minimap: Cube = field(default=None, repr=False, init=False)
+    collision_map: Cube = None
 
     moving_platforms: list[MovingPlatform] = field(default_factory=list, repr=False)
     bumpers: list[Bumper] = field(default_factory=list, repr=False)
@@ -91,6 +93,10 @@ class Level:
     button_sequences: list[ButtonSequence] = field(default_factory=list, repr=False)
     othercubes: list[HoloCube] = field(default_factory=list, repr=False)
     resizers: list[Resizer] = field(default_factory=list, repr=False)
+
+    def __post_init__(self):
+        if self.collision_map is None:
+            self.collision_map = Cube(size=self.size)
 
     @classmethod
     def read(cls, path):
@@ -132,7 +138,7 @@ class Level:
         unknown_short_6 = reader.read_uint16()  # 0
         assert unknown_short_6 == 0
 
-        kwargs['legacy_minimap'] = Cube.read(reader, Size3D(x=legacy_minimap_width, y=legacy_minimap_length, z=1))
+        legacy_minimap = Cube.read(reader, Size3D(x=legacy_minimap_width, y=legacy_minimap_length, z=1))
 
         kwargs['collision_map'] = Cube.read(reader, size)
 
@@ -194,6 +200,7 @@ class Level:
         for id, button in enumerate(kwargs['buttons']):
             if button._children_count > 0:
                 children = [b for b in kwargs['buttons'] if b._parent_id == id]
+                assert button._children_count == len(children)
                 events = button.events
                 button.events = []
                 kwargs['button_sequences'].append(ButtonSequence(buttons=[button] + children,
@@ -221,7 +228,9 @@ class Level:
         kwargs['music_java'] = MusicJava(reader.read_uint8())
         kwargs['music'] = Music(reader.read_uint8())
 
-        return cls(**kwargs)
+        level = cls(**kwargs)
+        level._legacy_minimap = legacy_minimap
+        return level
 
     def write(self, path):
         writer = BinaryReader()
@@ -255,7 +264,12 @@ class Level:
         writer.write_uint16(unknown_short_5)
         writer.write_uint16(unknown_short_6)
 
-        self.legacy_minimap.write(writer)
+        if not self._legacy_minimap:
+            self._legacy_minimap = Cube(size=Size3D(legacy_minimap_width, legacy_minimap_length, 1))
+        assert self._legacy_minimap.size == Size3D(legacy_minimap_width, legacy_minimap_length, 1)
+        self._legacy_minimap.write(writer)
+
+        assert self.collision_map.size == self.size
         self.collision_map.write(writer)
         self.spawn_point.write(writer)
 
@@ -290,9 +304,79 @@ class Level:
         for e in self.prisms:
             e.write(writer)
 
-        writer.write_uint16(len(self.prisms))
-        for e in self.prisms:
+        writer.write_uint16(0)  # fans_count
+
+        # turn button sequences into normal buttons
+        for seq in self.button_sequences:
+            parent_id = len(self.buttons)
+            parent = seq.buttons[0]
+            parent._parent_id = -1
+            parent._sequence_in_order = seq.sequence_in_order
+            parent._children_count = len(seq.buttons) - 1
+            if parent.events:
+                print('overwriting events')
+            parent.events = seq.events
+            assert parent.mode == ButtonMode.STAY_DOWN
+
+            self.buttons.append(parent)
+            for child in seq.buttons[1:]:
+                assert child.events == []
+                assert child.mode == ButtonMode.STAY_DOWN
+                assert child._children_count == 0
+
+                child._sequence_in_order = seq.sequence_in_order
+                child._parent_id = parent_id
+                self.buttons.append(child)
+
+        # assign indices to everything that can be referenced
+        for i, p in enumerate(self.moving_platforms):
+            assert p._id is None
+            p._id = i
+
+        for i, b in enumerate(self.bumpers):
+            assert b._id is None
+            b._id = i
+
+        event_id = 0
+        block_events = []
+        for i, b in enumerate(self.buttons):
+            assert b._id is None
+            b._id = i
+
+            for e in b.events:
+                if e._id is not None:
+                    print('duplicate blockevent')
+                    continue
+
+                e._id = event_id
+                block_events.append(e)
+                event_id += 1
+
+        writer.write_uint16(len(block_events))
+        for e in block_events:
             e.write(writer)
 
+        writer.write_uint16(len(self.buttons))
+        for e in self.buttons:
+            e.write(writer)
 
-print(Level.read('level300.bin'))
+        writer.write_uint16(len(self.othercubes))
+        for e in self.othercubes:
+            e.write(writer)
+
+        writer.write_uint16(len(self.resizers))
+        for e in self.resizers:
+            e.write(writer)
+
+        writer.write_uint16(0)  # mini_blocks_count
+        writer.write_uint8(self.theme.value)
+        writer.write_uint8(self.music_java.value)
+        writer.write_uint8(self.music.value)
+
+        with open(path, 'wb') as f:
+            f.write(writer.buffer())
+
+t = time.time()
+Level.read('babylonian_817.bin').write('test.bin')
+
+print(time.time() - t)
