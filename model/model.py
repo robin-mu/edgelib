@@ -24,18 +24,20 @@ class AssetHeader:
 
     @classmethod
     def read(cls, reader: BinaryReader):
-        kwargs = {}
-        kwargs['engine_version'] = EngineVersion(reader.read_uint64())
-        kwargs['name'] = reader.read_str(64, 'ascii').rstrip('\x00')
-        kwargs['namespace'] = reader.read_str(64, 'ascii').rstrip('\x00')
-
-        return cls(**kwargs)
+        return cls(engine_version=EngineVersion(reader.read_uint64()),
+                   name=reader.read_str(64, 'ascii').rstrip('\x00'),
+                   namespace=reader.read_str(64, 'ascii').rstrip('\x00'))
 
 
 @dataclass
 class AssetHash:
-    hash_name: int
-    hash_namespace: int
+    name: int
+    namespace: int
+
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        return cls(name=reader.read_uint32(),
+                   namespace=reader.read_uint32())
 
 
 @dataclass
@@ -57,11 +59,39 @@ class ESOHeader:
     bounding_min: Vec3D
     bounding_max: Vec3D
 
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        kwargs = dict(unknown_1=reader.read_int32(),
+                      unknown_2=reader.read_int32(),
+                      asset_child=AssetHash.read(reader),
+                      asset_sibling=AssetHash.read(reader),
+                      unknown_3=reader.read_int32(),
+                      unknown_4=reader.read_int32(),
+                      unknown_5=reader.read_int32(),
+                      scale_xyz=reader.read_float(),
+                      translate=Vec3D.read(reader),
+                      rotate=Vec3D.read(reader),
+                      scale=Vec3D.read(reader),
+                      unknown_6=reader.read_float(),
+                      unknown_7=reader.read_int32(),
+                      num_models=reader.read_int32())
+
+        if kwargs['num_models'] > 0:
+            kwargs['bounding_min'] = Vec3D.read(reader)
+            kwargs['bounding_max'] = Vec3D.read(reader)
+        else:
+            kwargs['bounding_min'] = Vec3D(0, 0, 0)
+            kwargs['bounding_max'] = Vec3D(0, 0, 0)
+
+        return cls(**kwargs)
+
+
 class TypeFlag(Flag):
     NORMALS = 1
     COLORS = 2
     TEX_COORDS = 4
     TEX_COORDS_2 = 8
+
 
 @dataclass
 class ESOModel:
@@ -89,7 +119,7 @@ class ESOFooter:
 @dataclass
 class ESO:
     asset_header: AssetHeader
-    eso_header: ESOHeader = None
+    eso_header: ESOHeader
     models: list[ESOModel] = None
     footer_check: int = None
     eso_footer: ESOFooter = None
@@ -99,10 +129,10 @@ class ESO:
         with open(path, 'rb') as f:
             reader = BinaryReader(bytearray(f.read()))
 
-        kwargs = {}
-        kwargs['asset_header'] = AssetHeader.read(reader)
-
+        kwargs = dict(asset_header=AssetHeader.read(reader),
+                      eso_header=ESOHeader.read(reader))
 
         return cls(**kwargs)
+
 
 print(ESO.read('F388B822050DB82A.eso'))

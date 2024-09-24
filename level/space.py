@@ -78,15 +78,3 @@ class Cube:
         assert self.size == tuple(reversed(self.data.shape))
         for i in range(self.size.z):
             writer.write_bytes(BitArray(self.data[i].flatten()).tobytes())
-
-@dataclass
-class Vec2D:
-    x: float
-    y: float
-
-
-@dataclass
-class Vec3D:
-    x: float
-    y: float
-    z: float
