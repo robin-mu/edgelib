@@ -2,8 +2,22 @@ from binary_reader import BinaryReader
 
 from dataclasses import dataclass, field
 
+import struct
+
 from space import Vec2D, Vec3D
 from enum import Enum, Flag
+
+
+@dataclass
+class Color:
+    a: int
+    r: int
+    g: int
+    b: int
+
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        return cls(*struct.unpack("BBBB", struct.pack(">I", reader.read_int32())))
 
 
 class EngineVersion(Enum):
@@ -102,27 +116,61 @@ class ESOModel:
     unknown_1: int
     vertices: list[Vec3D] = field(default_factory=list)
     normals: list[Vec3D] = field(default_factory=list)
-    colors: list[int] = field(default_factory=list)
+    colors: list[Color] = field(default_factory=list)
     tex_coords: list[Vec2D] = field(default_factory=list)
     tex_coords_2: list[Vec2D] = field(default_factory=list)
     indices: list[int] = field(default_factory=list)
 
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        kwargs = dict(asset_material=AssetHash.read(reader),
+                      type_flags=TypeFlag(reader.read_int32()),
+                      num_verts=reader.read_int32(),
+                      num_polys=reader.read_int32())
+        assert kwargs['num_verts'] == kwargs['num_polys'] * 3
+        kwargs['unknown_1'] = reader.read_int32()
+        kwargs['vertices'] = [Vec3D.read(reader) for _ in range(kwargs['num_verts'])]
+
+        if TypeFlag.NORMALS in kwargs['type_flags']:
+            kwargs['normals'] = [Vec3D.read(reader) for _ in range(kwargs['num_verts'])]
+
+        if TypeFlag.COLORS in kwargs['type_flags']:
+            kwargs['colors'] = [Color.read(reader) for _ in range(kwargs['num_verts'])]
+
+        if TypeFlag.TEX_COORDS in kwargs['type_flags']:
+            kwargs['tex_coords'] = [Vec2D.read(reader) for _ in range(kwargs['num_verts'])]
+
+        if TypeFlag.TEX_COORDS_2 in kwargs['type_flags']:
+            kwargs['tex_coords_2'] = [Vec2D.read(reader) for _ in range(kwargs['num_verts'])]
+
+        kwargs['indices'] = [reader.read_uint16() for _ in range(kwargs['num_polys'] * 3)]
+
+        return cls(**kwargs)
+
+
 
 @dataclass
 class ESOFooter:
-    unknown_1: float
-    unknown_2: float
-    unknown_3: int
-    unknown_4: int
+    unknown_1: float = 0
+    unknown_2: float = 0
+    unknown_3: int = 0
+    unknown_4: int = 0
+
+    @classmethod
+    def read(cls, reader: BinaryReader):
+        return cls(unknown_1=reader.read_float(),
+                   unknown_2=reader.read_float(),
+                   unknown_3=reader.read_int32(),
+                   unknown_4=reader.read_int32())
 
 
 @dataclass
 class ESO:
     asset_header: AssetHeader
     eso_header: ESOHeader
-    models: list[ESOModel] = None
-    footer_check: int = None
-    eso_footer: ESOFooter = None
+    models: list[ESOModel]
+    footer_check: bool = False
+    eso_footer: ESOFooter = field(default_factory=ESOFooter)
 
     @classmethod
     def read(cls, path: str):
@@ -131,6 +179,14 @@ class ESO:
 
         kwargs = dict(asset_header=AssetHeader.read(reader),
                       eso_header=ESOHeader.read(reader))
+
+        kwargs['models'] = [ESOModel.read(reader) for _ in range(kwargs['eso_header'].num_models)]
+
+        if kwargs['eso_header'].num_models > 0:
+            kwargs['footer_check'] = reader.read_uint32() == 1
+
+            if kwargs['footer_check']:
+                kwargs['eso_footer'] = ESOFooter.read(reader)
 
         return cls(**kwargs)
 
