@@ -17,7 +17,10 @@ class Color:
 
     @classmethod
     def read(cls, reader: BinaryReader):
-        return cls(*struct.unpack("BBBB", struct.pack(">I", reader.read_int32())))
+        return cls(*struct.unpack('BBBB', struct.pack('>I', reader.read_int32())))
+
+    def write(self, writer: BinaryReader):
+        writer.write_int32(int.from_bytes(struct.pack('BBBB', self.a, self.r, self.g, self.b)))
 
 
 class EngineVersion(Enum):
@@ -42,6 +45,11 @@ class AssetHeader:
                    name=reader.read_str(64, 'ascii').rstrip('\x00'),
                    namespace=reader.read_str(64, 'ascii').rstrip('\x00'))
 
+    def write(self, writer: BinaryReader):
+        writer.write_uint64(self.engine_version.value)
+        writer.write_str(self.name.ljust(64, '\x00'), encoding='ascii')
+        writer.write_str(self.namespace.ljust(64, '\x00'), encoding='ascii')
+
 
 @dataclass
 class AssetHash:
@@ -52,6 +60,10 @@ class AssetHash:
     def read(cls, reader: BinaryReader):
         return cls(name=reader.read_uint32(),
                    namespace=reader.read_uint32())
+
+    def write(self, writer: BinaryReader):
+        writer.write_uint32(self.name)
+        writer.write_uint32(self.namespace)
 
 
 @dataclass
@@ -99,6 +111,26 @@ class ESOHeader:
 
         return cls(**kwargs)
 
+    def write(self, writer: BinaryReader):
+        writer.write_int32(self.unknown_1)
+        writer.write_int32(self.unknown_2)
+        self.asset_child.write(writer)
+        self.asset_sibling.write(writer)
+        writer.write_int32(self.unknown_3)
+        writer.write_int32(self.unknown_4)
+        writer.write_int32(self.unknown_5)
+        writer.write_float(self.scale_xyz)
+        self.translate.write(writer)
+        self.rotate.write(writer)
+        self.scale.write(writer)
+        writer.write_float(self.unknown_6)
+        writer.write_int32(self.unknown_7)
+        writer.write_int32(self.num_models)
+
+        if self.num_models > 0:
+            self.bounding_min.write(writer)
+            self.bounding_max.write(writer)
+
 
 class TypeFlag(Flag):
     NORMALS = 1
@@ -111,8 +143,6 @@ class TypeFlag(Flag):
 class ESOModel:
     asset_material: AssetHash
     type_flags: TypeFlag
-    num_verts: int
-    num_polys: int
     unknown_1: int
     vertices: list[Vec3D] = field(default_factory=list)
     normals: list[Vec3D] = field(default_factory=list)
@@ -124,29 +154,60 @@ class ESOModel:
     @classmethod
     def read(cls, reader: BinaryReader):
         kwargs = dict(asset_material=AssetHash.read(reader),
-                      type_flags=TypeFlag(reader.read_int32()),
-                      num_verts=reader.read_int32(),
-                      num_polys=reader.read_int32())
-        assert kwargs['num_verts'] == kwargs['num_polys'] * 3
+                      type_flags=TypeFlag(reader.read_int32()))
+
+        num_verts = reader.read_int32()
+        num_polys = reader.read_int32()
+
+        assert num_verts == num_polys * 3
         kwargs['unknown_1'] = reader.read_int32()
-        kwargs['vertices'] = [Vec3D.read(reader) for _ in range(kwargs['num_verts'])]
+        kwargs['vertices'] = [Vec3D.read(reader) for _ in range(num_verts)]
 
         if TypeFlag.NORMALS in kwargs['type_flags']:
-            kwargs['normals'] = [Vec3D.read(reader) for _ in range(kwargs['num_verts'])]
+            kwargs['normals'] = [Vec3D.read(reader) for _ in range(num_verts)]
 
         if TypeFlag.COLORS in kwargs['type_flags']:
-            kwargs['colors'] = [Color.read(reader) for _ in range(kwargs['num_verts'])]
+            kwargs['colors'] = [Color.read(reader) for _ in range(num_verts)]
 
         if TypeFlag.TEX_COORDS in kwargs['type_flags']:
-            kwargs['tex_coords'] = [Vec2D.read(reader) for _ in range(kwargs['num_verts'])]
+            kwargs['tex_coords'] = [Vec2D.read(reader) for _ in range(num_verts)]
 
         if TypeFlag.TEX_COORDS_2 in kwargs['type_flags']:
-            kwargs['tex_coords_2'] = [Vec2D.read(reader) for _ in range(kwargs['num_verts'])]
+            kwargs['tex_coords_2'] = [Vec2D.read(reader) for _ in range(num_verts)]
 
-        kwargs['indices'] = [reader.read_uint16() for _ in range(kwargs['num_polys'] * 3)]
+        kwargs['indices'] = [reader.read_uint16() for _ in range(num_polys * 3)]
 
         return cls(**kwargs)
 
+    def write(self, writer: BinaryReader):
+        self.asset_material.write(writer)
+        writer.write_uint32(self.type_flags.value)
+        writer.write_int32(len(self.vertices))
+        writer.write_int32(len(self.vertices) // 3)
+        writer.write_int32(self.unknown_1)
+
+        for v in self.vertices:
+            v.write(writer)
+
+        if TypeFlag.NORMALS in self.type_flags:
+            for v in self.normals:
+                v.write(writer)
+
+        if TypeFlag.COLORS in self.type_flags:
+            for c in self.colors:
+                c.write(writer)
+
+        if TypeFlag.TEX_COORDS in self.type_flags:
+            for v in self.tex_coords:
+                v.write(writer)
+
+        if TypeFlag.TEX_COORDS_2 in self.type_flags:
+            for v in self.tex_coords_2:
+                v.write(writer)
+
+        assert len(self.indices) == len(self.vertices)
+        for i in self.indices:
+            writer.write_uint16(i)
 
 
 @dataclass
@@ -162,6 +223,12 @@ class ESOFooter:
                    unknown_2=reader.read_float(),
                    unknown_3=reader.read_int32(),
                    unknown_4=reader.read_int32())
+
+    def write(self, writer: BinaryReader):
+        writer.write_float(self.unknown_1)
+        writer.write_float(self.unknown_2)
+        writer.write_int32(self.unknown_3)
+        writer.write_int32(self.unknown_4)
 
 
 @dataclass
@@ -190,5 +257,22 @@ class ESO:
 
         return cls(**kwargs)
 
+    def write(self, path: str):
+        writer = BinaryReader()
+        self.asset_header.write(writer)
+        self.eso_header.write(writer)
 
-print(ESO.read('F388B822050DB82A.eso'))
+        assert self.eso_header.num_models == len(self.models)
+        for model in self.models:
+            model.write(writer)
+
+        if len(self.models) > 0:
+            writer.write_uint32(self.footer_check)
+            if self.footer_check:
+                self.eso_footer.write(writer)
+
+        with open(path, 'wb') as f:
+            f.write(writer.buffer())
+
+ESO.read('F388B822050DB82A.eso').write('test.eso')
+print(ESO.read('test.eso'))
