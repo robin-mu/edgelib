@@ -53,8 +53,8 @@ class AssetHeader:
 
 @dataclass
 class AssetHash:
-    name: int
-    namespace: int
+    name: int = 0
+    namespace: int = 0
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -65,25 +65,28 @@ class AssetHash:
         writer.write_uint32(self.name)
         writer.write_uint32(self.namespace)
 
+    def __repr__(self):
+        return f'AssetHash({self.name:08X}{self.namespace:08X})'
+
 
 @dataclass
 class ESOHeader:
-    unknown_1: int
-    unknown_2: int
-    asset_child: AssetHash
-    asset_sibling: AssetHash
-    unknown_3: int
-    unknown_4: int
-    unknown_5: int
-    scale_xyz: float
-    translate: Vec3D
-    rotate: Vec3D
-    scale: Vec3D
-    unknown_6: float
-    unknown_7: int
-    num_models: int
-    bounding_min: Vec3D
-    bounding_max: Vec3D
+    unknown_1: int = 0
+    unknown_2: int = 0
+    asset_child: AssetHash = field(default_factory=AssetHash)
+    asset_sibling: AssetHash = field(default_factory=AssetHash)
+    unknown_3: int = 0
+    unknown_4: int = 0
+    unknown_5: int = 0
+    scale_xyz: float = 1
+    translate: Vec3D = field(default_factory=Vec3D.zeros)
+    rotate: Vec3D = field(default_factory=Vec3D.zeros)
+    scale: Vec3D = field(default_factory=Vec3D.ones)
+    unknown_6: float = 0
+    unknown_7: int = 0
+    num_models: int = 0
+    bounding_min: Vec3D = field(default_factory=Vec3D.zeros)
+    bounding_max: Vec3D = field(default_factory=Vec3D.zeros)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -274,5 +277,5 @@ class ESO:
         with open(path, 'wb') as f:
             f.write(writer.buffer())
 
-ESO.read('F388B822050DB82A.eso').write('test.eso')
+ESO.read('../F388B822050DB82A.eso').write('test.eso')
 print(ESO.read('test.eso'))

@@ -7,8 +7,9 @@ from binary_reader import BinaryReader
 from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, HoloCube, \
     Resizer, ButtonSequence, ButtonMode
 from events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
-from space import Size3D, Point3D, Cube
+from space import Size3D, Point3D, BitCube, StaticMap
 
+import numpy as np
 
 class Theme(Enum):
     WHITE = 0
@@ -80,8 +81,8 @@ class Level:
     angle_or_fov: int = 0
     is_angle: bool = False
 
-    _legacy_minimap: Cube = field(default=None, repr=False, init=False)
-    collision_map: Cube = None
+    _legacy_minimap: BitCube = field(default=None, repr=False, init=False)
+    _collision_map: BitCube = field(default=None, repr=False, init=False)
 
     moving_platforms: list[MovingPlatform] = field(default_factory=list, repr=False)
     bumpers: list[Bumper] = field(default_factory=list, repr=False)
@@ -93,10 +94,6 @@ class Level:
     button_sequences: list[ButtonSequence] = field(default_factory=list, repr=False)
     othercubes: list[HoloCube] = field(default_factory=list, repr=False)
     resizers: list[Resizer] = field(default_factory=list, repr=False)
-
-    def __post_init__(self):
-        if self.collision_map is None:
-            self.collision_map = Cube(size=self.size)
 
     @classmethod
     def read(cls, path):
@@ -138,9 +135,9 @@ class Level:
         unknown_short_6 = reader.read_uint16()  # 0
         assert unknown_short_6 == 0
 
-        legacy_minimap = Cube.read(reader, Size3D(x=legacy_minimap_width, y=legacy_minimap_length, z=1))
+        legacy_minimap = BitCube.read(reader, Size3D(x=legacy_minimap_width, y=legacy_minimap_length, z=1))
 
-        kwargs['collision_map'] = Cube.read(reader, size)
+        collision_map = BitCube.read(reader, size)
 
         kwargs['spawn_point'] = Point3D.read(reader)
         assert kwargs['spawn_point'].z >= -20
@@ -230,6 +227,7 @@ class Level:
 
         level = cls(**kwargs)
         level._legacy_minimap = legacy_minimap
+        level._collision_map = collision_map
         return level
 
     def write(self, path):
@@ -265,12 +263,12 @@ class Level:
         writer.write_uint16(unknown_short_6)
 
         if not self._legacy_minimap:
-            self._legacy_minimap = Cube(size=Size3D(legacy_minimap_width, legacy_minimap_length, 1))
+            self._legacy_minimap = BitCube(size=Size3D(legacy_minimap_width, legacy_minimap_length, 1))
         assert self._legacy_minimap.size == Size3D(legacy_minimap_width, legacy_minimap_length, 1)
         self._legacy_minimap.write(writer)
 
-        assert self.collision_map.size == self.size
-        self.collision_map.write(writer)
+        assert self._collision_map.size == self.size
+        self._collision_map.write(writer)
         self.spawn_point.write(writer)
 
         writer.write_int16(self.zoom)
@@ -377,6 +375,13 @@ class Level:
             f.write(writer.buffer())
 
 t = time.time()
-Level.read('babylonian_817.bin').write('test.bin')
+l = Level.read('../level300.bin')
+
+np.set_printoptions(threshold=np.inf)
+map = StaticMap.from_collision_map(l._collision_map)
+
+map.resize(30, 30, 5)
+
+print(np.transpose(map.blocks))
 
 print(time.time() - t)

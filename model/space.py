@@ -33,3 +33,11 @@ class Vec3D:
         writer.write_float(self.x)
         writer.write_float(self.y)
         writer.write_float(self.z)
+
+    @classmethod
+    def zeros(cls):
+        return cls(0, 0, 0)
+
+    @classmethod
+    def ones(cls):
+        return cls(1, 1, 1)

@@ -1,7 +1,15 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from binary_reader import BinaryReader
 from bitstring import BitArray
 import numpy as np
+
+# avoid cyclic imports
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from level.level import Theme
+
 
 @dataclass
 class Size2D:
@@ -52,16 +60,15 @@ class Point3D:
         writer.write_int16(self.z)
 
 @dataclass
-class Cube:
+class BitCube:
+    """
+    A cube (i.e. 3-dimensional array) of bits
+    """
     size: Size3D
-    data: np.ndarray = field(default=None, repr=False)
-
-    def __post_init__(self):
-        if self.data is None:
-            self.data = np.zeros((self.size.z, self.size.y, self.size.x))
+    data: np.ndarray
 
     def __getitem__(self, pos: tuple[slice, slice, slice]):
-        return self.data[*reversed(pos)]
+        return self.data[*pos]
 
     @classmethod
     def read(cls, reader: BinaryReader, size: Size3D):
@@ -72,9 +79,56 @@ class Cube:
         for i in range(size.z):
             data[i] = np.reshape(BitArray(reader.read_bytes(bytes_per_layer))[:layer_length], (size.y, size.x))
 
-        return cls(size, data)
+        return cls(size, np.transpose(data))
 
     def write(self, writer: BinaryReader):
-        assert self.size == tuple(reversed(self.data.shape))
+        assert self.size == self.data.shape
+        data = np.transpose(self.data)
         for i in range(self.size.z):
-            writer.write_bytes(BitArray(self.data[i].flatten()).tobytes())
+            writer.write_bytes(BitArray(data[i].flatten()).tobytes())
+
+
+@dataclass
+class Block:
+    """
+    :cvar collision: Whether the player cube can collide with this block.
+    :cvar visible: A model will be generated for this block, making it visible in the level
+    :cvar theme: The brightness theme of this block. Instead of a ``Theme`` enum value, you can also enter ``None`` to use
+    the same theme as the level, or a negative number which specifies a brightness difference, where ``-1`` means "1 shade
+    darker than the level theme" etc. Note that this wraps around after the darkest theme, so if your level theme is
+    ``Theme.BLACK`` and you enter ``-1``, the block will have ``Theme.WHITE`` as its theme.
+    :cvar height: The percentage of the block that is visible, starting from the top, e.g. a value of ``0.5`` will make
+    the top half of the block visible and the bottom half transparent.  A value of ``0`` doesn't make the block invisible
+    (for that you can set ``visible`` to ``False``) but will draw only the top face
+    of the block. Set this to ``None`` to use the default block height, i.e. blocks with a Z coordinate of 0 have a
+    height of ``0.5`` and all other block have a height of ``1``. Note that this only affects the block appearance,
+    the block will still have collision in the transparent part (if ``collision`` is set to ``True``).
+    """
+    collision: bool = True
+    visible: bool = True
+    theme: Theme | int = None
+    height: float = None
+
+    @classmethod
+    def from_collision_map(cls, collision_map_bit: int):
+        return cls(collision=bool(collision_map_bit), visible=bool(collision_map_bit))
+
+    def __repr__(self):
+        if self.collision and self.visible:
+            return '█'
+        else:
+            return ' '
+
+@dataclass
+class StaticMap:
+    blocks: np.ndarray
+
+    @classmethod
+    def from_collision_map(cls, collision_map: BitCube):
+        return cls(np.vectorize(lambda bit: Block(collision=bool(bit), visible=bool(bit)))(collision_map.data))
+
+    def resize(self, x, y, z):
+        self.blocks = np.pad(self.blocks, ((0, max(0, x - self.blocks.shape[0])),
+                                           (0, max(0, y - self.blocks.shape[1])),
+                                           (0, max(0, z - self.blocks.shape[2]))))
+        self.blocks = self.blocks[:x, :y, :z]
