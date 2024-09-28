@@ -45,7 +45,7 @@ class MovingPlatform:
     @classmethod
     def read(cls, reader: BinaryReader):
         kwargs = {}
-        kwargs['auto_start'] = bool(reader.read_uint8())
+        kwargs['auto_start'] = reader.read_uint8() == 2
         kwargs['loop_start_index'] = reader.read_uint8()
         clones = reader.read_int16()
         assert clones == -1
@@ -59,7 +59,7 @@ class MovingPlatform:
         return p
 
     def write(self, writer: BinaryReader):
-        writer.write_uint8(self.auto_start)  # maybe 2 if True
+        writer.write_uint8(2 if self.auto_start else 0)
         writer.write_uint8(self.loop_start_index)
         writer.write_int16(self._clones)
         writer.write_uint8(self.full_block)
