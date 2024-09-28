@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 from binary_reader import BinaryReader
 from bitstring import BitArray
 import numpy as np
@@ -44,6 +44,7 @@ class Size3D:
             return self.x == other.x and self.y == other.y and self.z == other.z
         return self.x == other[0] and self.y == other[1] and self.z == other[2]
 
+
 @dataclass
 class Point3D:
     x: int
@@ -64,11 +65,7 @@ class BitCube:
     """
     A cube (i.e. 3-dimensional array) of bits
     """
-    size: Size3D
     data: np.ndarray
-
-    def __getitem__(self, pos: tuple[slice, slice, slice]):
-        return self.data[*pos]
 
     @classmethod
     def read(cls, reader: BinaryReader, size: Size3D):
@@ -79,13 +76,19 @@ class BitCube:
         for i in range(size.z):
             data[i] = np.reshape(BitArray(reader.read_bytes(bytes_per_layer))[:layer_length], (size.y, size.x))
 
-        return cls(size, np.transpose(data))
+        return cls(np.transpose(data))
+
+    @classmethod
+    def zeros(cls, size: Size3D):
+        return cls(np.zeros((size.x, size.y, size.z), dtype=int))
 
     def write(self, writer: BinaryReader):
-        assert self.size == self.data.shape
         data = np.transpose(self.data)
-        for i in range(self.size.z):
-            writer.write_bytes(BitArray(data[i].flatten()).tobytes())
+        for layer in data:
+            writer.write_bytes(BitArray(layer.flatten()).tobytes())
+
+    def to_static_map(self) -> StaticMap:
+        return StaticMap(blocks=np.vectorize(lambda bit: Block.full() if bit else Block.empty())(self.data))
 
 
 @dataclass(frozen=True)
@@ -121,16 +124,40 @@ class Block:
                      theme=other['theme'] if 'theme' in other else self.theme,
                      height=other['height'] if 'height' in other else self.height)
 
-@dataclass
-class StaticMap:
-    blocks: np.ndarray
+    @classmethod
+    def empty(cls):
+        return cls(collision=False, visible=False)
 
     @classmethod
-    def from_collision_map(cls, collision_map: BitCube):
-        return cls(np.vectorize(lambda bit: Block(collision=bool(bit), visible=bool(bit)))(collision_map.data))
+    def full(cls):
+        return cls(collision=True, visible=True)
+
+    @classmethod
+    def half(cls):
+        return cls(collision=True, visible=True, height=0.5)
+
+@dataclass
+class StaticMap:
+    blocks: np.ndarray = None
+    size: InitVar[Size3D] = None
+
+    def __post_init__(self, size: Size3D):
+        if self.blocks is None:
+            self.blocks = np.full((size.x, size.y, size.z), Block.empty())
+
+    @property
+    def size(self):
+        return Size3D(*self.blocks.shape)
 
     def resize(self, x, y, z):
         self.blocks = np.pad(self.blocks, ((0, max(0, x - self.blocks.shape[0])),
                                            (0, max(0, y - self.blocks.shape[1])),
-                                           (0, max(0, z - self.blocks.shape[2]))))
+                                           (0, max(0, z - self.blocks.shape[2]))),
+                             constant_values=Block.empty())
         self.blocks = self.blocks[:x, :y, :z]
+
+    def to_collision_map(self):
+        return BitCube(data=np.vectorize(lambda block: int(block.collision))(self.blocks))
+
+    def __repr__(self):
+        return str(np.transpose(self.blocks))

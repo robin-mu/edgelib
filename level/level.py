@@ -64,7 +64,6 @@ class Music(Enum):
 @dataclass
 class Level:
     id: int
-    size: Size3D
     spawn_point: Point3D
     exit_point: Point3D
     name: str = ''
@@ -82,7 +81,8 @@ class Level:
     is_angle: bool = False
 
     _legacy_minimap: BitCube = field(default=None, repr=False, init=False)
-    _collision_map: BitCube = field(default=None, repr=False, init=False)
+
+    static_map: StaticMap = None
 
     moving_platforms: list[MovingPlatform] = field(default_factory=list, repr=False)
     bumpers: list[Bumper] = field(default_factory=list, repr=False)
@@ -116,7 +116,6 @@ class Level:
         prisms_count = reader.read_uint16()
 
         size = Size3D.read(reader)
-        kwargs['size'] = size
 
         unknown_short_1 = reader.read_uint16()  # size.x + size.y
         assert unknown_short_1 == size.x + size.y
@@ -138,6 +137,7 @@ class Level:
         legacy_minimap = BitCube.read(reader, Size3D(x=legacy_minimap_width, y=legacy_minimap_length, z=1))
 
         collision_map = BitCube.read(reader, size)
+        kwargs['static_map'] = collision_map.to_static_map()
 
         kwargs['spawn_point'] = Point3D.read(reader)
         assert kwargs['spawn_point'].z >= -20
@@ -227,7 +227,6 @@ class Level:
 
         level = cls(**kwargs)
         level._legacy_minimap = legacy_minimap
-        level._collision_map = collision_map
         return level
 
     def write(self, path):
@@ -244,14 +243,15 @@ class Level:
 
         writer.write_uint16(len(self.prisms))
 
-        self.size.write(writer)
+        size = self.static_map.size
+        size.write(writer)
 
-        unknown_short_1 = self.size.x + self.size.y
-        unknown_short_2 = unknown_short_1 + 2 * self.size.z
+        unknown_short_1 = size.x + size.y
+        unknown_short_2 = unknown_short_1 + 2 * size.z
         legacy_minimap_width = (unknown_short_1 + 9) // 10
         legacy_minimap_length = (unknown_short_2 + 9) // 10
         unknown_byte_1 = 10
-        unknown_short_5 = self.size.y - 1
+        unknown_short_5 = size.y - 1
         unknown_short_6 = 0
 
         writer.write_uint16(unknown_short_1)
@@ -262,13 +262,15 @@ class Level:
         writer.write_uint16(unknown_short_5)
         writer.write_uint16(unknown_short_6)
 
+        legacy_minimap_size = Size3D(legacy_minimap_width, legacy_minimap_length, 1)
         if not self._legacy_minimap:
-            self._legacy_minimap = BitCube(size=Size3D(legacy_minimap_width, legacy_minimap_length, 1))
-        assert self._legacy_minimap.size == Size3D(legacy_minimap_width, legacy_minimap_length, 1)
+            self._legacy_minimap = BitCube.zeros(legacy_minimap_size)
+        assert self._legacy_minimap.data.shape == legacy_minimap_size
         self._legacy_minimap.write(writer)
 
-        assert self._collision_map.size == self.size
-        self._collision_map.write(writer)
+        collision_map = self.static_map.to_collision_map()
+        assert collision_map.data.shape == size
+        collision_map.write(writer)
         self.spawn_point.write(writer)
 
         writer.write_int16(self.zoom)
@@ -375,13 +377,19 @@ class Level:
             f.write(writer.buffer())
 
 t = time.time()
-l = Level.read('../level300.bin')
+l = Level.read('level300.bin')
+l.write('test.bin')
+l = Level.read('test.bin')
 
 np.set_printoptions(threshold=np.inf)
-map = StaticMap.from_collision_map(l._collision_map)
+map = l.static_map
 
 map.resize(30, 30, 5)
 
-print(np.transpose(map.blocks))
+print(map)
+
+b = StaticMap(size=Size3D(3, 4, 5))
+print(b)
+print(b.size)
 
 print(time.time() - t)
