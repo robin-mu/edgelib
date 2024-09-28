@@ -88,7 +88,7 @@ class BitCube:
             writer.write_bytes(BitArray(data[i].flatten()).tobytes())
 
 
-@dataclass
+@dataclass(frozen=True)
 class Block:
     """
     :cvar collision: Whether the player cube can collide with this block.
@@ -109,15 +109,17 @@ class Block:
     theme: Theme | int = None
     height: float = None
 
-    @classmethod
-    def from_collision_map(cls, collision_map_bit: int):
-        return cls(collision=bool(collision_map_bit), visible=bool(collision_map_bit))
-
     def __repr__(self):
         if self.collision and self.visible:
             return '█'
         else:
             return ' '
+
+    def __add__(self, other: dict):
+        return Block(collision=other['collision'] if 'collision' in other else self.collision,
+                     visible=other['visible'] if 'visible' in other else self.visible,
+                     theme=other['theme'] if 'theme' in other else self.theme,
+                     height=other['height'] if 'height' in other else self.height)
 
 @dataclass
 class StaticMap:
