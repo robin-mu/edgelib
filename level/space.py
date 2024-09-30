@@ -113,8 +113,11 @@ class Block:
     height: float = None
 
     def __repr__(self):
-        if self.collision and self.visible:
-            return '█'
+        if self.visible:
+            if self.height is None or self.height > 0.5:
+                return '█'
+            else:
+                return '▀'
         else:
             return ' '
 
@@ -158,6 +161,17 @@ class StaticMap:
 
     def to_collision_map(self):
         return BitCube(data=np.vectorize(lambda block: int(block.collision))(self.blocks))
+
+    def __getitem__(self, item: int | tuple):
+        if isinstance(item, int) or isinstance(item, slice):
+            return self.blocks[item]
+        return self.blocks[*item]
+
+    def __setitem__(self, key, value):
+        if isinstance(key, int) or isinstance(key, slice):
+            self.blocks[key] = value
+        elif isinstance(key, tuple):
+            self.blocks[*key] = value
 
     def __repr__(self):
         return str(np.transpose(self.blocks))

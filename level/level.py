@@ -7,7 +7,7 @@ from binary_reader import BinaryReader
 from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, HoloCube, \
     Resizer, ButtonSequence, ButtonMode
 from events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
-from space import Size3D, Point3D, BitCube, StaticMap
+from space import Size3D, Point3D, BitCube, StaticMap, Block
 
 import numpy as np
 
@@ -386,10 +386,14 @@ map = l.static_map
 
 map.resize(30, 30, 5)
 
-print(map)
+print(map[0])
 
 b = StaticMap(size=Size3D(3, 4, 5))
 print(b)
 print(b.size)
+b[:, 2] = Block.full()
+
+b[0] = Block.half()
+print(b)
 
 print(time.time() - t)
