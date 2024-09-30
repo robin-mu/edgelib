@@ -4,8 +4,8 @@ from types import NoneType
 
 from binary_reader import BinaryReader
 
-from space import Point3D, Size2D
-from events import KeyEvent, BlockEvent
+from level.events import KeyEvent, BlockEvent
+from level.space import Point3D, Size2D
 
 
 @dataclass

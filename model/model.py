@@ -1,11 +1,10 @@
+import struct
+from dataclasses import dataclass, field
+from enum import Enum, Flag
+
 from binary_reader import BinaryReader
 
-from dataclasses import dataclass, field
-
-import struct
-
-from space import Vec2D, Vec3D
-from enum import Enum, Flag
+from model.space import Vec2D, Vec3D
 
 
 @dataclass
@@ -17,10 +16,10 @@ class Color:
 
     @classmethod
     def read(cls, reader: BinaryReader):
-        return cls(*struct.unpack('BBBB', struct.pack('>I', reader.read_int32())))
+        return cls(*struct.unpack('BBBB', struct.pack('>I', reader.read_uint32())))
 
     def write(self, writer: BinaryReader):
-        writer.write_int32(int.from_bytes(struct.pack('BBBB', self.a, self.r, self.g, self.b)))
+        writer.write_uint32(int.from_bytes(struct.pack('BBBB', self.a, self.r, self.g, self.b)))
 
 
 class EngineVersion(Enum):
@@ -146,7 +145,7 @@ class TypeFlag(Flag):
 class ESOModel:
     asset_material: AssetHash
     type_flags: TypeFlag
-    unknown_1: int
+    unknown_1: int = 0
     vertices: list[Vec3D] = field(default_factory=list)
     normals: list[Vec3D] = field(default_factory=list)
     colors: list[Color] = field(default_factory=list)
@@ -164,6 +163,7 @@ class ESOModel:
 
         assert num_verts == num_polys * 3
         kwargs['unknown_1'] = reader.read_int32()
+        assert kwargs['unknown_1'] == 0
         kwargs['vertices'] = [Vec3D.read(reader) for _ in range(num_verts)]
 
         if TypeFlag.NORMALS in kwargs['type_flags']:
@@ -277,5 +277,6 @@ class ESO:
         with open(path, 'wb') as f:
             f.write(writer.buffer())
 
-ESO.read('../F388B822050DB82A.eso').write('test.eso')
-print(ESO.read('test.eso'))
+if __name__ == '__main__':
+    ESO.read('12222669050DB82A.eso').write('test.eso')
+    print(ESO.read('test.eso'))

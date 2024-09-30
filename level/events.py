@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING  # avoid cyclic imports
 
 from binary_reader import BinaryReader
 
-# avoid cyclic imports
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from dynamic_parts import MovingPlatform, Bumper, Button
+    from level.dynamic_parts import MovingPlatform, Bumper, Button
 
 class BlockEventType(Enum):
     AFFECT_MOVING_PLATFORM = 0
