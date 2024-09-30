@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, InitVar
+from dataclasses import dataclass, InitVar
+from typing import TYPE_CHECKING  # avoid cyclic imports
+
+import numpy as np
 from binary_reader import BinaryReader
 from bitstring import BitArray
-import numpy as np
 
-# avoid cyclic imports
-from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from level.level import Theme
 
@@ -76,14 +76,14 @@ class BitCube:
         for i in range(size.z):
             data[i] = np.reshape(BitArray(reader.read_bytes(bytes_per_layer))[:layer_length], (size.y, size.x))
 
-        return cls(np.transpose(data))
+        return cls(data.T)
 
     @classmethod
     def zeros(cls, size: Size3D):
         return cls(np.zeros((size.x, size.y, size.z), dtype=int))
 
     def write(self, writer: BinaryReader):
-        data = np.transpose(self.data)
+        data = self.data.T
         for layer in data:
             writer.write_bytes(BitArray(layer.flatten()).tobytes())
 
@@ -112,7 +112,7 @@ class Block:
     theme: Theme | int = None
     height: float = None
 
-    def __repr__(self):
+    def __str__(self):
         if self.visible:
             if self.height is None or self.height > 0.5:
                 return '█'
@@ -159,19 +159,25 @@ class StaticMap:
                              constant_values=Block.empty())
         self.blocks = self.blocks[:x, :y, :z]
 
-    def to_collision_map(self):
+    def to_collision_map(self) -> BitCube:
         return BitCube(data=np.vectorize(lambda block: int(block.collision))(self.blocks))
 
-    def __getitem__(self, item: int | tuple):
-        if isinstance(item, int) or isinstance(item, slice):
-            return self.blocks[item]
-        return self.blocks[*item]
+    def to_model_map(self) -> dict:
+        mask = np.vectorize(lambda block: block.visible)(self.blocks)
+        coords = np.argwhere(mask)
+        return dict(zip([tuple(c) for c in coords], self.blocks[tuple(coords.T)]))
+
+
+    def __getitem__(self, item):
+        if isinstance(item, tuple):
+            return self.blocks[*item]
+        return self.blocks[item]
 
     def __setitem__(self, key, value):
-        if isinstance(key, int) or isinstance(key, slice):
-            self.blocks[key] = value
-        elif isinstance(key, tuple):
+        if isinstance(key, tuple):
             self.blocks[*key] = value
+        else:
+            self.blocks[key] = value
 
     def __repr__(self):
-        return str(np.transpose(self.blocks))
+        return str(self.blocks.T)

@@ -2,14 +2,15 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 
+import numpy as np
 from binary_reader import BinaryReader
 
-from dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, HoloCube, \
-    Resizer, ButtonSequence, ButtonMode
-from events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
-from space import Size3D, Point3D, BitCube, StaticMap, Block
+from level.dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, \
+    HoloCube, Resizer, ButtonSequence, ButtonMode
+from level.events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
+from level.space import Size3D, Point3D, BitCube, StaticMap
+from model.model import ESOModel, AssetHash, TypeFlag
 
-import numpy as np
 
 class Theme(Enum):
     WHITE = 0
@@ -94,6 +95,10 @@ class Level:
     button_sequences: list[ButtonSequence] = field(default_factory=list, repr=False)
     othercubes: list[HoloCube] = field(default_factory=list, repr=False)
     resizers: list[Resizer] = field(default_factory=list, repr=False)
+
+    @property
+    def size(self):
+        return self.static_map.size
 
     @classmethod
     def read(cls, path):
@@ -376,24 +381,57 @@ class Level:
         with open(path, 'wb') as f:
             f.write(writer.buffer())
 
-t = time.time()
-l = Level.read('level300.bin')
-l.write('test.bin')
-l = Level.read('test.bin')
 
-np.set_printoptions(threshold=np.inf)
-map = l.static_map
+    def generate_model(self):
+        models_namespace = 0x050DB82A
+        materials = [0x2F2CC05D, 0x55ECE3AD, 0xC273F284, 0x0D11C513]
+        child_models = [0x67228D77, 0x1DE2AE87, 0x8A7DBFAE, 0x451F8839]
 
-map.resize(30, 30, 5)
+        themes = list(range(4))
+        themes = themes[self.model_theme.value:] + themes[:self.model_theme.value]
+        # themes now is the list [0, 1, 2, 3] but rotated so that level.model_theme is the first value
 
-print(map[0])
+        models = [None, None, None, None]  # One model for each theme
 
-b = StaticMap(size=Size3D(3, 4, 5))
-print(b)
-print(b.size)
-b[:, 2] = Block.full()
+        for (x, y, z), block in self.static_map.to_model_map().items():
+            if block.theme is None:
+                theme = self.model_theme.value
+            elif block.theme < 0:
+                theme = themes[-block.theme]
+            else:
+                theme = block.theme
 
-b[0] = Block.half()
-print(b)
+            if models[theme] is None:
+                models[theme] = ESOModel(asset_material=AssetHash(name=materials[theme], namespace=models_namespace),
+                                         type_flags=TypeFlag.NORMALS | TypeFlag.TEX_COORDS)
 
-print(time.time() - t)
+            model = models[theme]
+
+
+if __name__ == '__main__':
+    np.set_printoptions(threshold=np.inf)
+    t = time.time()
+    l = Level.read('level300.bin')
+
+    l.generate_model()
+
+
+    # l.write('test.bin')
+    # l = Level.read('test.bin')
+    #
+    # np.set_printoptions(threshold=np.inf)
+    # map = l.static_map
+    #
+    # map.resize(30, 30, 5)
+    #
+    # print(map[0])
+    #
+    # b = StaticMap(size=Size3D(3, 4, 5))
+    # print(b)
+    # print(b.size)
+    # b[:, 2] = Block.full()
+    #
+    # b[0] = Block.half()
+    # print(b)
+    #
+    # print(time.time() - t)
