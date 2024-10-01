@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from binary_reader import BinaryReader
 
 
-@dataclass
+@dataclass(frozen=True)
 class Vec2D:
     x: float
     y: float
@@ -17,7 +17,7 @@ class Vec2D:
         writer.write_float(self.x)
         writer.write_float(self.y)
 
-@dataclass
+@dataclass(frozen=True)
 class Vec3D:
     x: float
     y: float
@@ -33,6 +33,17 @@ class Vec3D:
         writer.write_float(self.x)
         writer.write_float(self.y)
         writer.write_float(self.z)
+
+    def __add__(self, other):
+        if isinstance(other, Vec3D):
+            return Vec3D(self.x + other.x, self.y + other.y, self.z + other.z)
+
+    def __sub__(self, other):
+        if isinstance(other, Vec3D):
+            return Vec3D(self.x - other.x, self.y - other.y, self.z - other.z)
+
+    def __mul__(self, other):
+        return Vec3D(self.x * other, self.y * other, self.z * other)
 
     @classmethod
     def zeros(cls):

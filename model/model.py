@@ -70,8 +70,8 @@ class AssetHash:
 
 @dataclass
 class ESOHeader:
-    unknown_1: int = 0
-    unknown_2: int = 0
+    unknown_1: int = 1
+    unknown_2: int = 4096
     asset_child: AssetHash = field(default_factory=AssetHash)
     asset_sibling: AssetHash = field(default_factory=AssetHash)
     unknown_3: int = 0
@@ -81,7 +81,7 @@ class ESOHeader:
     translate: Vec3D = field(default_factory=Vec3D.zeros)
     rotate: Vec3D = field(default_factory=Vec3D.zeros)
     scale: Vec3D = field(default_factory=Vec3D.ones)
-    unknown_6: float = 0
+    unknown_6: float = 1
     unknown_7: int = 0
     num_models: int = 0
     bounding_min: Vec3D = field(default_factory=Vec3D.zeros)
@@ -207,6 +207,9 @@ class ESOModel:
         if TypeFlag.TEX_COORDS_2 in self.type_flags:
             for v in self.tex_coords_2:
                 v.write(writer)
+
+        if not self.indices:
+            self.indices = list(range(len(self.vertices)))
 
         assert len(self.indices) == len(self.vertices)
         for i in self.indices:

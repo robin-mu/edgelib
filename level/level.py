@@ -5,11 +5,13 @@ from enum import Enum
 import numpy as np
 from binary_reader import BinaryReader
 
+from level.crc_gen import generate_crc
 from level.dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, \
     HoloCube, Resizer, ButtonSequence, ButtonMode
 from level.events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
-from level.space import Size3D, Point3D, BitCube, StaticMap
-from model.model import ESOModel, AssetHash, TypeFlag
+from level.space import Size3D, Point3D, BitCube, StaticMap, Block
+from model.model import ESOModel, AssetHash, TypeFlag, ESO, AssetHeader, EngineVersion, ESOHeader
+from model.space import Vec3D, Vec2D
 
 
 class Theme(Enum):
@@ -74,7 +76,7 @@ class Level:
     b_time: int = 4
     c_time: int = 5
     theme: Theme = Theme.WHITE
-    model_theme: Theme = theme
+    model_theme: Theme = None
     music_java: MusicJava = MusicJava.MENUS
     music: Music = Music.KAKKOI
     zoom: int = -1
@@ -83,7 +85,7 @@ class Level:
 
     _legacy_minimap: BitCube = field(default=None, repr=False, init=False)
 
-    static_map: StaticMap = None
+    static_map: StaticMap = field(default=None, repr=False)
 
     moving_platforms: list[MovingPlatform] = field(default_factory=list, repr=False)
     bumpers: list[Bumper] = field(default_factory=list, repr=False)
@@ -95,6 +97,10 @@ class Level:
     button_sequences: list[ButtonSequence] = field(default_factory=list, repr=False)
     othercubes: list[HoloCube] = field(default_factory=list, repr=False)
     resizers: list[Resizer] = field(default_factory=list, repr=False)
+
+    def __post_init__(self):
+        if self.model_theme is None:
+            self.model_theme = self.theme
 
     @property
     def size(self):
@@ -381,11 +387,18 @@ class Level:
         with open(path, 'wb') as f:
             f.write(writer.buffer())
 
+        self.generate_model(path)
 
-    def generate_model(self):
+    def generate_model(self, levelname: str):
+        def to_modelspace(v: Vec3D) -> Vec3D:
+            return (v - translates[self.model_theme.value] - Vec3D(0, 0, self.size.y)) * 10
+
+
         models_namespace = 0x050DB82A
         materials = [0x2F2CC05D, 0x55ECE3AD, 0xC273F284, 0x0D11C513]
         child_models = [0x67228D77, 0x1DE2AE87, 0x8A7DBFAE, 0x451F8839]
+
+        translates = [Vec3D(53.5, 2.25, -46), Vec3D(89.5, 2.25, -90), Vec3D(43, 2.25, -32.5), Vec3D(30, 2.25, -74.5)]
 
         themes = list(range(4))
         themes = themes[self.model_theme.value:] + themes[:self.model_theme.value]
@@ -393,13 +406,20 @@ class Level:
 
         models = [None, None, None, None]  # One model for each theme
 
-        for (x, y, z), block in self.static_map.to_model_map().items():
+        model_map = self.static_map.to_model_map()
+
+        # resolve automatic values for height and theme
+        for coords, block in model_map.items():
+            if block.height is None:
+                model_map[coords] += {'height': 1.0 if coords[2] > 0 else 0.5}
             if block.theme is None:
-                theme = self.model_theme.value
+                model_map[coords] += {'theme': self.model_theme.value}
             elif block.theme < 0:
-                theme = themes[-block.theme]
-            else:
-                theme = block.theme
+                model_map[coords] += {'theme': themes[-block.theme]}
+
+
+        for (x, y, z), block in model_map.items():
+            theme = block.theme
 
             if models[theme] is None:
                 models[theme] = ESOModel(asset_material=AssetHash(name=materials[theme], namespace=models_namespace),
@@ -407,13 +427,96 @@ class Level:
 
             model = models[theme]
 
+            # top face: only drawn when there is no full block above and the block is not overlapping with the exit
+            if model_map.get((x, y, z + 1), Block(height=0)).height < 1 and (abs(x - self.exit_point.x) > 1 or abs(y - self.exit_point.y) > 1 or z + 1 != self.exit_point.z):
+                model.vertices.append(to_modelspace(Vec3D(x,     z + 1, y)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z + 1, y)))
+                model.vertices.append(to_modelspace(Vec3D(x,     z + 1, y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x,     z + 1, y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z + 1, y)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z + 1, y + 1)))
+                model.normals += [Vec3D(0, 1, 0)] * 6
+
+                tex_x = 0.51 if ((x + y) & 1) == 0 else 0.76  # check whether x + y is even to create a chessboard pattern
+                tex_x_plus_1 = tex_x + 0.23
+                tex_y = 1 - (z + 1) * 0.25  # the lowest 3 z layers have a gradient
+                tex_y_plus_1 = tex_y + 0.25
+                model.tex_coords.append(Vec2D(tex_x,        tex_y))
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y))
+                model.tex_coords.append(Vec2D(tex_x,        tex_y_plus_1))
+                model.tex_coords.append(Vec2D(tex_x,        tex_y_plus_1))
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y))
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y_plus_1))
+
+            if block.height <= 0:
+                continue
+
+            z_base = z + 1 - block.height
+            # south face
+            if model_map.get((x + 1, y, z), Block(height=0)).height < block.height:
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z_base, y)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z_base, y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z + 1,  y)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z_base, y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z + 1,  y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z + 1,  y)))
+                model.normals += [Vec3D(1, 0, 0)] * 6
+
+                tex_x = 0.26
+                tex_x_plus_1 = 0.49
+                tex_y = 1 - (z + 1) * 0.25  # the lowest 3 z layers have a gradient
+                tex_y_plus_1 = tex_y + 0.25 - 0.25 * (1 - block.height)
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y_plus_1))
+                model.tex_coords.append(Vec2D(tex_x,        tex_y_plus_1))
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y))
+                model.tex_coords.append(Vec2D(tex_x,        tex_y_plus_1))
+                model.tex_coords.append(Vec2D(tex_x,        tex_y))
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y))
+
+            # east face
+            if model_map.get((x, y + 1, z), Block(height=0)).height < block.height:
+                model.vertices.append(to_modelspace(Vec3D(x,     z_base, y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x,     z + 1,  y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z_base, y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x,     z + 1,  y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z + 1,  y + 1)))
+                model.vertices.append(to_modelspace(Vec3D(x + 1, z_base, y + 1)))
+                model.normals += [Vec3D(0, 0, 1)] * 6
+
+                tex_x = 0.01
+                tex_x_plus_1 = 0.24
+                tex_y = 1 - (z + 1) * 0.25  # the lowest 3 z layers have a gradient
+                tex_y_plus_1 = tex_y + 0.25 - 0.25 * (1 - block.height)
+                model.tex_coords.append(Vec2D(tex_x,        tex_y_plus_1))
+                model.tex_coords.append(Vec2D(tex_x,        tex_y))
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y_plus_1))
+                model.tex_coords.append(Vec2D(tex_x,        tex_y))
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y))
+                model.tex_coords.append(Vec2D(tex_x_plus_1, tex_y_plus_1))
+
+        models = [m for m in models if m is not None]
+
+        name = '.'.join(levelname.split('.')[:-1]) if '.' in levelname else levelname
+        eso = ESO(asset_header=AssetHeader(engine_version=EngineVersion.Version1804Edge,
+                                           name=name + '.rmdl', namespace='models'),
+                  eso_header=ESOHeader(num_models=len(models),
+                                       scale=Vec3D(0.1, 0.1, 0.1),
+                                       translate=translates[self.model_theme.value],
+                                       asset_child=AssetHash(name=child_models[self.model_theme.value],
+                                                             namespace=models_namespace),
+                                       bounding_min=to_modelspace(Vec3D(0, 0, 0)),
+                                       bounding_max=to_modelspace(Vec3D(self.size.x, self.size.z, self.size.y))),
+                  models=models)
+
+        eso.write(generate_crc(name=name, namespace='models') + '.eso')
+
+
 
 if __name__ == '__main__':
     np.set_printoptions(threshold=np.inf)
     t = time.time()
     l = Level.read('level300.bin')
-
-    l.generate_model()
+    l.write('test.bin')
 
 
     # l.write('test.bin')
@@ -434,4 +537,4 @@ if __name__ == '__main__':
     # b[0] = Block.half()
     # print(b)
     #
-    # print(time.time() - t)
+    print(time.time() - t)

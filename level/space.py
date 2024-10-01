@@ -104,7 +104,7 @@ class Block:
     the top half of the block visible and the bottom half transparent.  A value of ``0`` doesn't make the block invisible
     (for that you can set ``visible`` to ``False``) but will draw only the top face
     of the block. Set this to ``None`` to use the default block height, i.e. blocks with a Z coordinate of 0 have a
-    height of ``0.5`` and all other block have a height of ``1``. Note that this only affects the block appearance,
+    height of ``0.5`` and all other blocks have a height of ``1``. Note that this only affects the block appearance,
     the block will still have collision in the transparent part (if ``collision`` is set to ``True``).
     """
     collision: bool = True
@@ -122,10 +122,10 @@ class Block:
             return ' '
 
     def __add__(self, other: dict):
-        return Block(collision=other['collision'] if 'collision' in other else self.collision,
-                     visible=other['visible'] if 'visible' in other else self.visible,
-                     theme=other['theme'] if 'theme' in other else self.theme,
-                     height=other['height'] if 'height' in other else self.height)
+        return Block(collision=other.get('collision', self.collision),
+                     visible=other.get('visible', self.visible),
+                     theme=other.get('theme', self.theme),
+                     height=other.get('height', self.height))
 
     @classmethod
     def empty(cls):
@@ -169,9 +169,12 @@ class StaticMap:
 
 
     def __getitem__(self, item):
-        if isinstance(item, tuple):
-            return self.blocks[*item]
-        return self.blocks[item]
+        try:
+            if isinstance(item, tuple):
+                return self.blocks[*item]
+            return self.blocks[item]
+        except IndexError:
+            return Block.empty()
 
     def __setitem__(self, key, value):
         if isinstance(key, tuple):
