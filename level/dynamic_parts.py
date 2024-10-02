@@ -42,6 +42,10 @@ class MovingPlatform:
 
     _id: int = field(default=None, init=False, repr=False)
 
+    @property
+    def position(self) -> Point3D:
+        return self.waypoints[0].position
+
     @classmethod
     def read(cls, reader: BinaryReader):
         kwargs = {}
