@@ -112,7 +112,7 @@ class Block:
     theme: Theme | int = None
     height: float = None
 
-    def __str__(self):
+    def __repr__(self):
         if self.visible:
             if self.height is None or self.height > 0.5:
                 return '█'
@@ -152,12 +152,28 @@ class StaticMap:
     def size(self):
         return Size3D(*self.blocks.shape)
 
-    def resize(self, x, y, z):
-        self.blocks = np.pad(self.blocks, ((0, max(0, x - self.blocks.shape[0])),
-                                           (0, max(0, y - self.blocks.shape[1])),
-                                           (0, max(0, z - self.blocks.shape[2]))),
-                             constant_values=Block.empty())
-        self.blocks = self.blocks[:x, :y, :z]
+    def resize(self, newsize: Size3D=None, top=0, bottom=0, north=0, south=0, east=0, west=0):
+        """
+        Either newsize or the other six parameters have to be given. If you enter newsize, it determines the new size of
+        the level and the other parameters are ignored. New blocks are added or removed at the top, east, and south faces of the
+        level.
+        If you enter the other six parameters, the level is padded with the specified number of blocks on each side.
+        Negative numbers are allowed to make the level smaller.
+        """
+        if newsize is not None:
+            self.blocks = np.pad(self.blocks, ((0, max(0, newsize.x - self.blocks.shape[0])),
+                                               (0, max(0, newsize.y - self.blocks.shape[1])),
+                                               (0, max(0, newsize.z - self.blocks.shape[2]))),
+                                 constant_values=Block.empty())
+            self.blocks = self.blocks[:newsize.x, :newsize.y, :newsize.z]
+        else:
+            self.blocks = np.pad(self.blocks, ((max(0, west), max(0, east)),
+                                               (max(0, north), max(0, south)),
+                                               (max(0, bottom), max(0, top))),
+                                 constant_values=Block.empty())
+            self.blocks = self.blocks[max(0, -west):self.blocks.shape[0] + east,
+                                      max(0, -north):self.blocks.shape[1] + south,
+                                      max(0, -bottom):self.blocks.shape[2] + top]
 
     def to_collision_map(self) -> BitCube:
         return BitCube(data=np.vectorize(lambda block: int(block.collision))(self.blocks))

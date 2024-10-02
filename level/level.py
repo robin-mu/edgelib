@@ -516,25 +516,13 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=np.inf)
     t = time.time()
     l = Level.read('level300.bin')
+
+    for p in l.moving_platforms:
+        p.waypoints = []
+
     l.write('test.bin')
 
 
-    # l.write('test.bin')
-    # l = Level.read('test.bin')
-    #
-    # np.set_printoptions(threshold=np.inf)
-    # map = l.static_map
-    #
-    # map.resize(30, 30, 5)
-    #
-    # print(map[0])
-    #
-    # b = StaticMap(size=Size3D(3, 4, 5))
-    # print(b)
-    # print(b.size)
-    # b[:, 2] = Block.full()
-    #
-    # b[0] = Block.half()
-    # print(b)
-    #
+
+
     print(time.time() - t)
