@@ -53,6 +53,10 @@ class BlockEvent:
         elif type == BlockEventType.AFFECT_BUTTON:
             return AffectButtonEvent(button=id, start_behavior=ButtonStartType(payload))
 
+    def write(self, writer):
+        pass
+
+
 @dataclass
 class AffectMovingPlatformEvent(BlockEvent):
     """
