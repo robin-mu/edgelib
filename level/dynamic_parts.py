@@ -7,24 +7,35 @@ from binary_reader import BinaryReader
 from level.events import KeyEvent, BlockEvent
 from level.space import Point3D, Size2D
 
+@dataclass(frozen=True, slots=True)
+class SpawnPoint:
+    _position: Point3D
+
+
+@dataclass(frozen=True, slots=True)
+class ExitPoint:
+    _position: Point3D
+
 
 @dataclass
 class Waypoint:
-    position: Point3D
+    offset: Point3D = Point3D(0, 0, 0)
     travel_time: int = 0
     pause_time: int = 0
 
+    _position: Point3D = field(default=None, init=False, repr=False)
+
     @classmethod
     def read(cls, reader: BinaryReader):
-        kwargs = {}
-        kwargs['position'] = Point3D.read(reader)
-        kwargs['travel_time'] = reader.read_uint16()
-        kwargs['pause_time'] = reader.read_uint16()
+        position = Point3D.read(reader)
 
-        return cls(**kwargs)
+        waypoint = cls(travel_time=reader.read_uint16(),
+                       pause_time=reader.read_uint16())
+        waypoint._position = position
+        return waypoint
 
     def write(self, writer: BinaryReader):
-        self.position.write(writer)
+        self._position.write(writer)
         writer.write_uint16(self.travel_time)
         writer.write_uint16(self.pause_time)
 
@@ -32,34 +43,43 @@ class Waypoint:
 @dataclass
 class MovingPlatform:
     """
-    :cvar _id: This is only used internally when writing a level and should not be changed manually
+    :cvar loop_start_index: None means the platform will not loop, i.e. stop at its last waypoint. An int denotes the
+    waypoint index (starting from 0) to which the platform will return to after the last waypoint
     """
     auto_start: bool = True
-    loop_start_index: int = 1
-    _clones: int = field(default=-1, repr=False, init=False)  # deprecated
+    loop_start_index: int | None = None
     full_block: bool = True
     waypoints: list[Waypoint] = field(default_factory=list, repr=False)
 
-    _id: int = field(default=None, init=False, repr=False)
+    _clones: int = field(default=-1, repr=False, init=False)  # deprecated
 
-    @property
-    def position(self) -> Point3D:
-        return self.waypoints[0].position
+    _position: Point3D = field(default=None, init=False, repr=False)
+    _id: int = field(default=None, init=False, repr=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
-        kwargs = {}
-        kwargs['auto_start'] = reader.read_uint8() == 2
-        kwargs['loop_start_index'] = reader.read_uint8()
+        kwargs = dict(auto_start=reader.read_uint8() == 2)
+        loop_start_index = reader.read_uint8()
+        if loop_start_index == 0:
+            kwargs['loop_start_index'] = None
+        else:
+            kwargs['loop_start_index'] = loop_start_index - 1
+
         clones = reader.read_int16()
         assert clones == -1
+
         kwargs['full_block'] = bool(reader.read_uint8())
 
         waypoint_count = reader.read_uint8()
-        kwargs['waypoints'] = [Waypoint.read(reader) for _ in range(waypoint_count)]
+        waypoints = [Waypoint.read(reader) for _ in range(waypoint_count)]
+        position = waypoints[0]._position
+        for w in waypoints:
+            w.offset = w._position - position
+        kwargs['waypoints'] = waypoints
 
         p = cls(**kwargs)
         p._clones = clones
+        p._position = position
         return p
 
     def write(self, writer: BinaryReader):
@@ -69,6 +89,7 @@ class MovingPlatform:
         writer.write_uint8(self.full_block)
         writer.write_uint8(len(self.waypoints))
         for w in self.waypoints:
+            w._position = self._position + w.offset
             w.write(writer)
 
 
@@ -92,30 +113,31 @@ class Bumper:
     North is -Y or top-right
     :cvar _id: This is only used internally when writing a level and should not be changed manually
     """
-    position: Point3D
     enabled: bool = True
     north: BumperSide = field(default_factory=BumperSide)
     east: BumperSide = field(default_factory=BumperSide)
     south: BumperSide = field(default_factory=BumperSide)
     west: BumperSide = field(default_factory=BumperSide)
 
+    _position: Point3D = field(default=None, init=False, repr=False)
     _id: int = field(default=None, init=False, repr=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
-        kwargs = {}
-        kwargs['enabled'] = bool(reader.read_uint8())
-        kwargs['position'] = Point3D.read(reader)
+        kwargs = dict(enabled=bool(reader.read_uint8()))
+        position = Point3D.read(reader)
         kwargs['north'] = BumperSide.read(reader)
         kwargs['east'] = BumperSide.read(reader)
         kwargs['south'] = BumperSide.read(reader)
         kwargs['west'] = BumperSide.read(reader)
 
-        return cls(**kwargs)
+        bumper = cls(**kwargs)
+        bumper._position = position
+        return bumper
 
     def write(self, writer: BinaryReader):
         writer.write_uint8(self.enabled)
-        self.position.write(writer)
+        self._position.write(writer)
         self.north.write(writer)
         self.east.write(writer)
         self.south.write(writer)
@@ -124,37 +146,44 @@ class Bumper:
 
 @dataclass
 class FallingPlatform:
-    position: Point3D
     float_time: int = 20
+
+    _position: Point3D = field(default=None, init=False, repr=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
-        return cls(position=Point3D.read(reader), float_time=reader.read_uint16())
+        position = Point3D.read(reader)
+        platform = cls(float_time=reader.read_uint16())
+        platform._position = position
+        return platform
 
     def write(self, writer: BinaryReader):
-        self.position.write(writer)
+        self._position.write(writer)
         writer.write_uint16(self.float_time)
 
 
 @dataclass
 class Checkpoint:
-    position: Point3D
     respawn_z: int = 0
     radius: Size2D = field(default_factory=Size2D)
 
+    _position: Point3D = field(default=None, init=False, repr=False)
+
     @classmethod
     def read(cls, reader: BinaryReader):
-        return cls(position=Point3D.read(reader), respawn_z=reader.read_int16(), radius=Size2D.read(reader))
+        position = Point3D.read(reader)
+        cp = cls(respawn_z=reader.read_int16(), radius=Size2D.read(reader))
+        cp._position = position
+        return cp
 
     def write(self, writer: BinaryReader):
-        self.position.write(writer)
+        self._position.write(writer)
         writer.write_int16(self.respawn_z)
         self.radius.write(writer)
 
 
 @dataclass
 class CameraTrigger:
-    position: Point3D
     zoom: int = -1
     radius: Size2D = field(default_factory=Size2D)
     reset: bool = None  # seems to be only True when is_angle is False
@@ -164,10 +193,12 @@ class CameraTrigger:
     single_use: bool = False
     is_angle: bool = None
 
+    _position: Point3D = field(default=None, init=False, repr=False)
+
     @classmethod
     def read(cls, reader: BinaryReader):
         kwargs = {}
-        kwargs['position'] = Point3D.read(reader)
+        position = Point3D.read(reader)
         kwargs['zoom'] = reader.read_int16()
         assert -1 <= kwargs['zoom'] <= 6
         kwargs['radius'] = Size2D.read(reader)
@@ -179,10 +210,12 @@ class CameraTrigger:
             kwargs['single_use'] = bool(reader.read_uint8())
             kwargs['is_angle'] = bool(reader.read_uint8())
 
-        return cls(**kwargs)
+        trigger = cls(**kwargs)
+        trigger._position = position
+        return trigger
 
     def write(self, writer: BinaryReader):
-        self.position.write(writer)
+        self._position.write(writer)
         writer.write_int16(self.zoom)
         self.radius.write(writer)
         if self.zoom != -1:
@@ -197,8 +230,9 @@ class CameraTrigger:
 
 @dataclass
 class Prism:
-    position: Point3D
     _energy: int = field(default=1, repr=False, init=False)  # deprecated
+
+    _position: Point3D = field(default=None, init=False, repr=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -206,12 +240,13 @@ class Prism:
         energy = reader.read_uint8()
         assert energy == 1
 
-        p = cls(position=position)
+        p = cls()
+        p._position = position
         p._energy = energy
         return p
 
     def write(self, writer: BinaryReader):
-        self.position.write(writer)
+        self._position.write(writer)
         writer.write_uint8(self._energy)
 
 
@@ -247,18 +282,17 @@ class Button:
     _children_count: int = field(default=0, repr=False, init=False)
 
     moving_platform: MovingPlatform = None
-    position: Point3D = None
 
     events: list[BlockEvent] = field(default_factory=list)
 
+    _position: Point3D = field(default=None, init=False, repr=False)
     _id: int = field(default=None, init=False, repr=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
-        kwargs = {}
-        kwargs['visible'] = ButtonVisibility(reader.read_uint8())
-        kwargs['disable_count'] = reader.read_uint8()
-        kwargs['mode'] = ButtonMode(reader.read_uint8())
+        kwargs = dict(visible=ButtonVisibility(reader.read_uint8()),
+                      disable_count=reader.read_uint8(),
+                      mode=ButtonMode(reader.read_uint8()))
         parent_id = reader.read_int16()
         sequence_in_order = bool(reader.read_uint8())
         children_count = reader.read_uint8()
@@ -266,8 +300,9 @@ class Button:
 
         if is_moving:
             kwargs['moving_platform'] = reader.read_int16()
+            position = None
         else:
-            kwargs['position'] = Point3D.read(reader)
+            position = Point3D.read(reader)
 
         event_count = reader.read_uint16()
         kwargs['events'] = [reader.read_uint16() for _ in range(event_count)]
@@ -281,6 +316,7 @@ class Button:
         b._parent_id = parent_id
         b._sequence_in_order = sequence_in_order
         b._children_count = children_count
+        b._position = position
         return b
 
     def write(self, writer: BinaryReader):
@@ -291,13 +327,12 @@ class Button:
         writer.write_uint8(self._sequence_in_order)
         writer.write_uint8(self._children_count)
 
-        assert (self.moving_platform is None) ^ (self.position is None)  # only one of moving_platform or position can be set
         if self.moving_platform:
             writer.write_uint8(1)  # is_moving == True
             writer.write_int16(self.moving_platform._id)
         else:
             writer.write_uint8(0)  # is_moving == False
-            self.position.write(writer)
+            self._position.write(writer)
 
         writer.write_uint16(len(self.events))
         for e in self.events:
@@ -322,17 +357,18 @@ class HoloCube:
     :cvar moving_block_sync: The ID of the moving platform to sync with. The holocube will start
     moving when the specified moving platform reaches its first waypoint. A value of -1 means no sync.
     """
-    position_trigger: Point3D
-    position_cube: Point3D
+    offset_cube: Point3D
     moving_block_sync: MovingPlatform | NoneType = None
     key_events: list[KeyEvent] = field(default_factory=list)
+
+    _position: Point3D = field(default=None, init=False, repr=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
         kwargs = {}
         dark_cube = False
 
-        kwargs['position_trigger'] = Point3D.read(reader)
+        position_trigger = Point3D.read(reader)
         moving_block_sync = reader.read_int16()
         if moving_block_sync == -2:  # dark cube
             dark_cube = True
@@ -342,22 +378,28 @@ class HoloCube:
         kwargs['moving_block_sync'] = None if moving_block_sync == -1 else moving_block_sync
 
         key_event_count = reader.read_uint16()
-        kwargs['position_cube'] = Point3D.read(reader)
+        position_cube = Point3D.read(reader)
+        kwargs['offset_cube'] = position_cube - position_trigger
         kwargs['key_events'] = [KeyEvent.read(reader) for _ in range(key_event_count)]
 
         if dark_cube:
-            return DarkCube(**kwargs)
+            cube = DarkCube(**kwargs)
         else:
-            return HoloCube(**kwargs)
+            cube = HoloCube(**kwargs)
+
+        cube._position = position_trigger
+        return cube
 
     def write(self, writer: BinaryReader):
-        self.position_trigger.write(writer)
+        self._position.write(writer)
         if isinstance(self, DarkCube):
             writer.write_int16(-2)  # dark cube
             self.radius.write(writer)
         writer.write_int16(self.moving_block_sync._id if self.moving_block_sync else -1)
         writer.write_uint16(len(self.key_events))
-        self.position_cube.write(writer)
+
+        position_cube = self._position + self.offset_cube
+        position_cube.write(writer)
         for e in self.key_events:
             e.write(writer)
 
@@ -373,17 +415,20 @@ class ResizerDirection(Enum):
 
 @dataclass
 class Resizer:
-    position: Point3D
     direction: ResizerDirection
     visible: bool = True
 
+    _position: Point3D = field(default=None, init=False, repr=False)
+
     @classmethod
     def read(cls, reader: BinaryReader):
-        return cls(position=Point3D.read(reader),
-                   visible=bool(reader.read_uint8()),
-                   direction=ResizerDirection(reader.read_uint8()))
+        position = Point3D.read(reader)
+        resizer = cls(visible=bool(reader.read_uint8()),
+                      direction=ResizerDirection(reader.read_uint8()))
+        resizer._position = position
+        return resizer
 
     def write(self, writer: BinaryReader):
-        self.position.write(writer)
+        self._position.write(writer)
         writer.write_uint8(self.visible)
         writer.write_uint8(self.direction.value)
