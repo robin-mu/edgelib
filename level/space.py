@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from level.level import Theme
 
 
-@dataclass
+@dataclass(frozen=True)
 class Size2D:
     x: int = 0
     y: int = 0
@@ -24,7 +24,7 @@ class Size2D:
         writer.write_uint8(self.x)
         writer.write_uint8(self.y)
 
-@dataclass
+@dataclass(frozen=True)
 class Size3D:
     x: int
     y: int
@@ -45,7 +45,7 @@ class Size3D:
         return self.x == other[0] and self.y == other[1] and self.z == other[2]
 
 
-@dataclass
+@dataclass(frozen=True)
 class Point3D:
     x: int
     y: int
@@ -60,7 +60,16 @@ class Point3D:
         writer.write_int16(self.y)
         writer.write_int16(self.z)
 
-@dataclass
+    def __add__(self, other):
+        if isinstance(other, Point3D):
+            return Point3D(self.x + other.x, self.y + other.y, self.z + other.z)
+
+    def __sub__(self, other):
+        if isinstance(other, Point3D):
+            return Point3D(self.x - other.x, self.y - other.y, self.z - other.z)
+
+
+@dataclass(frozen=True)
 class BitCube:
     """
     A cube (i.e. 3-dimensional array) of bits
@@ -88,10 +97,10 @@ class BitCube:
             writer.write_bytes(BitArray(layer.flatten()).tobytes())
 
     def to_static_map(self) -> StaticMap:
-        return StaticMap(blocks=np.vectorize(lambda bit: Block.full() if bit else Block.empty())(self.data))
+        return StaticMap(np.vectorize(lambda bit: Block.full() if bit else Block.empty())(self.data))
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=True)
 class Block:
     """
     :cvar collision: Whether the player cube can collide with this block.
@@ -139,64 +148,43 @@ class Block:
     def half(cls):
         return cls(collision=True, visible=True, height=0.5)
 
+
 @dataclass
-class StaticMap:
-    blocks: np.ndarray = None
+class DynamicMap:
+    map: np.ndarray = None
+    offset: Point3D = Point3D(0, 0, 0)
     size: InitVar[Size3D] = None
 
     def __post_init__(self, size: Size3D):
-        if self.blocks is None:
-            self.blocks = np.full((size.x, size.y, size.z), Block.empty())
+        if self.map is None:
+            self.map = np.full((size.x, size.y, size.z), fill_value=None, dtype=object)
+
+    def _resize(self, top=0, bottom=0, north=0, south=0, east=0, west=0):
+        self.map = np.pad(self.map, ((west, east),
+                                     (north, south),
+                                     (bottom, top)), constant_values=None)
+
+class StaticMap(np.ndarray):
+    def __new__(cls, data, *args, **kwargs):
+        return np.asarray(data).view(cls)
 
     @property
-    def size(self):
-        return Size3D(*self.blocks.shape)
+    def sizeee(self):
+        mask = np.vectorize(lambda block: block != Block.empty())(self)
+        return Size3D(*np.max(np.argwhere(mask), axis=0))
 
-    def resize(self, newsize: Size3D=None, top=0, bottom=0, north=0, south=0, east=0, west=0):
-        """
-        Either newsize or the other six parameters have to be given. If you enter newsize, it determines the new size of
-        the level and the other parameters are ignored. New blocks are added or removed at the top, east, and south faces of the
-        level.
-        If you enter the other six parameters, the level is padded with the specified number of blocks on each side.
-        Negative numbers are allowed to make the level smaller.
-        """
-        if newsize is not None:
-            self.blocks = np.pad(self.blocks, ((0, max(0, newsize.x - self.blocks.shape[0])),
-                                               (0, max(0, newsize.y - self.blocks.shape[1])),
-                                               (0, max(0, newsize.z - self.blocks.shape[2]))),
-                                 constant_values=Block.empty())
-            self.blocks = self.blocks[:newsize.x, :newsize.y, :newsize.z]
-        else:
-            self.blocks = np.pad(self.blocks, ((max(0, west), max(0, east)),
-                                               (max(0, north), max(0, south)),
-                                               (max(0, bottom), max(0, top))),
-                                 constant_values=Block.empty())
-            self.blocks = self.blocks[max(0, -west):self.blocks.shape[0] + east,
-                                      max(0, -north):self.blocks.shape[1] + south,
-                                      max(0, -bottom):self.blocks.shape[2] + top]
+    def _resize(self, top=0, bottom=0, north=0, south=0, east=0, west=0):
+        return np.pad(self.blocks, ((west, east),
+                                    (north, south),
+                                    (bottom, top)), constant_values=Block.empty())
 
     def to_collision_map(self) -> BitCube:
-        return BitCube(data=np.vectorize(lambda block: int(block.collision))(self.blocks))
+        return BitCube(data=np.vectorize(lambda block: int(block.collision))(self))
 
     def to_model_map(self) -> dict:
-        mask = np.vectorize(lambda block: block.visible)(self.blocks)
+        mask = np.vectorize(lambda block: block.visible)(self)
         coords = np.argwhere(mask)
-        return dict(zip([tuple(c) for c in coords], self.blocks[tuple(coords.T)]))
+        return dict(zip([tuple(c) for c in coords], self[tuple(coords.T)]))
 
-
-    def __getitem__(self, item):
-        try:
-            if isinstance(item, tuple):
-                return self.blocks[*item]
-            return self.blocks[item]
-        except IndexError:
-            return Block.empty()
-
-    def __setitem__(self, key, value):
-        if isinstance(key, tuple):
-            self.blocks[*key] = value
-        else:
-            self.blocks[key] = value
-
-    def __repr__(self):
-        return str(self.blocks.T)
+    def __str__(self):
+        return np.ndarray.__str__(self.T)
