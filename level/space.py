@@ -152,39 +152,117 @@ class Block:
 @dataclass
 class DynamicMap:
     map: np.ndarray = None
-    offset: Point3D = Point3D(0, 0, 0)
+    offset: tuple[int, int, int] = (0, 0, 0)
     size: InitVar[Size3D] = None
 
     def __post_init__(self, size: Size3D):
         if self.map is None:
             self.map = np.full((size.x, size.y, size.z), fill_value=None, dtype=object)
 
-    def _resize(self, top=0, bottom=0, north=0, south=0, east=0, west=0):
-        self.map = np.pad(self.map, ((west, east),
-                                     (north, south),
-                                     (bottom, top)), constant_values=None)
+    @staticmethod
+    def pad(arr, west=0, east=0, north=0, south=0, bottom=0, top=0):
+        return np.pad(arr, ((max(0, west), max(0, east)),
+                                           (max(0, north), max(0, south)),
+                                           (max(0, bottom), max(0, top))),
+                             constant_values=None)
 
-class StaticMap(np.ndarray):
-    def __new__(cls, data, *args, **kwargs):
-        return np.asarray(data).view(cls)
+    def __getitem__(self, item):
+        if not isinstance(item, tuple):
+            item = item,
+
+        pad_args = []
+        for i, c in enumerate(item):
+            if isinstance(c, slice):
+                pad_args.append(-min(c.start or 0, (c.stop or 0) + 1) - self.offset[i])
+                pad_args.append(max(c.start or 0, (c.stop or 0) - 1) - (self.map.shape[i] - self.offset[i]))
+            else:
+                pad_args.append(-c - self.offset[i])
+                pad_args.append(c + 1 - (self.map.shape[i] - self.offset[i]))
+        temp = DynamicMap.pad(self.map, *pad_args)
+        temp_offset = tuple(self.offset[i] + max(0, pad_args[2*i] if 2*i < len(pad_args) else 0) for i in range(3))
+
+        item_plus_offset = []
+        for i, c in enumerate(item):
+            if isinstance(c, slice):
+                new_slice = slice(c.start + temp_offset[i] if c.start is not None else None,
+                                  c.stop + temp_offset[i] if c.stop is not None else None,
+                                  c.step)
+                item_plus_offset.append(new_slice)
+            else:
+                item_plus_offset.append(c + temp_offset[i])
+        return np.ndarray.__getitem__(temp, tuple(item_plus_offset))
+
+    def __setitem__(self, key, value):
+        if not isinstance(key, tuple):
+            key = key,
+
+        pad_args = []
+        for i, c in enumerate(key):
+            if isinstance(c, slice):
+                pad_args.append(-min(c.start or 0, (c.stop or 0) + 1) - self.offset[i])
+                pad_args.append(max(c.start or 0, (c.stop or 0) - 1) - (self.map.shape[i] - self.offset[i]))
+            else:
+                pad_args.append(-c - self.offset[i])
+                pad_args.append(c + 1 - (self.map.shape[i] - self.offset[i]))
+        self.map = DynamicMap.pad(self.map, *pad_args)
+        self.offset = tuple(self.offset[i] + max(0, pad_args[2*i] if 2*i < len(pad_args) else 0) for i in range(3))
+
+        key_plus_offset = []
+        for i, c in enumerate(key):
+            if isinstance(c, slice):
+                new_slice = slice(c.start + self.offset[i] if c.start is not None else None,
+                                 c.stop + self.offset[i] if c.stop is not None else None,
+                                 c.step)
+                key_plus_offset.append(new_slice)
+            else:
+                key_plus_offset.append(c + self.offset[i])
+
+        np.ndarray.__setitem__(self.map, tuple(key_plus_offset), value)
+
+
+@dataclass
+class StaticMap:
+    blocks: np.ndarray = None
+    size: InitVar[Size3D] = None
+
+    def __post_init__(self, size: Size3D):
+        if self.blocks is None:
+            self.blocks = np.full((size.x, size.y, size.z), fill_value=Block.empty(), dtype=object)
 
     @property
-    def sizeee(self):
-        mask = np.vectorize(lambda block: block != Block.empty())(self)
-        return Size3D(*np.max(np.argwhere(mask), axis=0))
+    def size(self):
+        return Size3D(*self.blocks.shape)
 
-    def _resize(self, top=0, bottom=0, north=0, south=0, east=0, west=0):
-        return np.pad(self.blocks, ((west, east),
-                                    (north, south),
-                                    (bottom, top)), constant_values=Block.empty())
+    @staticmethod
+    def resize(arr, x=0, y=0, z=0):
+        return np.pad(arr, ((0, max(0, (x or 0) - arr.shape[0])),
+                            (0, max(0, (y or 0) - arr.shape[1])),
+                            (0, max(0, (z or 0) - arr.shape[2]))),
+                             constant_values=Block.empty())
 
     def to_collision_map(self) -> BitCube:
-        return BitCube(data=np.vectorize(lambda block: int(block.collision))(self))
+        return BitCube(data=np.vectorize(lambda block: int(block.collision))(self.blocks))
 
     def to_model_map(self) -> dict:
-        mask = np.vectorize(lambda block: block.visible)(self)
+        mask = np.vectorize(lambda block: block.visible)(self.blocks)
         coords = np.argwhere(mask)
-        return dict(zip([tuple(c) for c in coords], self[tuple(coords.T)]))
+        return dict(zip([tuple(c) for c in coords], self.blocks[tuple(coords.T)]))
 
-    def __str__(self):
-        return np.ndarray.__str__(self.T)
+    def __getitem__(self, item):
+        if not isinstance(item, tuple):
+            item = item,
+
+        size = [c.stop if isinstance(c, slice) else c + 1 for c in item]
+        temp = StaticMap.resize(self.blocks, *size)
+        return np.ndarray.__getitem__(temp, item)
+
+    def __setitem__(self, key, value):
+        if not isinstance(key, tuple):
+            key = key,
+
+        size = [c.stop if isinstance(c, slice) else c + 1 for c in key]
+        self.blocks = StaticMap.resize(self.blocks, *size)
+        np.ndarray.__setitem__(self.blocks, key, value)
+
+    def __repr__(self):
+        return str(self.blocks.T)
