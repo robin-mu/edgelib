@@ -9,12 +9,12 @@ from level.space import Point3D, Size2D
 
 @dataclass(frozen=True, slots=True)
 class SpawnPoint:
-    _position: Point3D
+    _position: field(compare=False)
 
 
 @dataclass(frozen=True, slots=True)
 class ExitPoint:
-    _position: Point3D
+    _position: field(compare=False)
 
 
 @dataclass
@@ -23,7 +23,7 @@ class Waypoint:
     travel_time: int = 0
     pause_time: int = 0
 
-    _position: Point3D = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -53,8 +53,8 @@ class MovingPlatform:
 
     _clones: int = field(default=-1, repr=False, init=False)  # deprecated
 
-    _position: Point3D = field(default=None, init=False, repr=False)
-    _id: int = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
+    _id: int = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -84,7 +84,7 @@ class MovingPlatform:
 
     def write(self, writer: BinaryReader):
         writer.write_uint8(2 if self.auto_start else 0)
-        writer.write_uint8(self.loop_start_index)
+        writer.write_uint8(0 if self.loop_start_index is None else self.loop_start_index + 1)
         writer.write_int16(self._clones)
         writer.write_uint8(self.full_block)
         writer.write_uint8(len(self.waypoints))
@@ -119,8 +119,8 @@ class Bumper:
     south: BumperSide = field(default_factory=BumperSide)
     west: BumperSide = field(default_factory=BumperSide)
 
-    _position: Point3D = field(default=None, init=False, repr=False)
-    _id: int = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
+    _id: int = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -148,7 +148,7 @@ class Bumper:
 class FallingPlatform:
     float_time: int = 20
 
-    _position: Point3D = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -167,7 +167,7 @@ class Checkpoint:
     respawn_z: int = 0
     radius: Size2D = field(default_factory=Size2D)
 
-    _position: Point3D = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -193,7 +193,7 @@ class CameraTrigger:
     single_use: bool = False
     is_angle: bool = None
 
-    _position: Point3D = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -232,7 +232,7 @@ class CameraTrigger:
 class Prism:
     _energy: int = field(default=1, repr=False, init=False)  # deprecated
 
-    _position: Point3D = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -277,16 +277,16 @@ class Button:
     disable_count: int = 0
     mode: ButtonMode = ButtonMode.STAY_DOWN
 
-    _parent_id: int = field(default=-1, repr=False, init=False)
-    _sequence_in_order: bool = field(default=False, repr=False, init=False)
-    _children_count: int = field(default=0, repr=False, init=False)
+    _parent_id: int = field(default=-1, repr=False, init=False, compare=False)
+    _sequence_in_order: bool = field(default=False, repr=False, init=False, compare=False)
+    _children_count: int = field(default=0, repr=False, init=False, compare=False)
 
     moving_platform: MovingPlatform = None
 
-    events: list[BlockEvent] = field(default_factory=list)
+    events: list[BlockEvent] = field(default_factory=list, repr=False)
 
-    _position: Point3D = field(default=None, init=False, repr=False)
-    _id: int = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
+    _id: int = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -348,7 +348,7 @@ class ButtonSequence:
     """
     buttons: list[Button]
     sequence_in_order: bool = False
-    events: list[BlockEvent] = field(default_factory=list)
+    events: list[BlockEvent] = field(default_factory=list, repr=False)
 
 
 @dataclass
@@ -361,7 +361,7 @@ class HoloCube:
     moving_block_sync: MovingPlatform | NoneType = None
     key_events: list[KeyEvent] = field(default_factory=list)
 
-    _position: Point3D = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -418,7 +418,7 @@ class Resizer:
     direction: ResizerDirection
     visible: bool = True
 
-    _position: Point3D = field(default=None, init=False, repr=False)
+    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
