@@ -7,9 +7,9 @@ from binary_reader import BinaryReader
 
 from level.crc_gen import generate_crc
 from level.dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, \
-    HoloCube, Resizer, ButtonSequence, ButtonMode
+    HoloCube, Resizer, ButtonSequence, ButtonMode, SpawnPoint, ExitPoint
 from level.events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
-from level.space import Size3D, Point3D, BitCube, StaticMap, Block
+from level.space import Size3D, Point3D, BitCube, StaticMap, DynamicMap, Block
 from model.model import ESOModel, AssetHash, TypeFlag, ESO, AssetHeader, EngineVersion, ESOHeader
 from model.space import Vec3D, Vec2D
 
@@ -67,8 +67,6 @@ class Music(Enum):
 @dataclass
 class Level:
     id: int
-    spawn_point: Point3D
-    exit_point: Point3D
     name: str = ''
     s_plus_time: int = 1
     s_time: int = 2
@@ -86,17 +84,9 @@ class Level:
     _legacy_minimap: BitCube = field(default=None, repr=False, init=False)
 
     static_map: StaticMap = field(default=None, repr=False)
+    dynamic_map: DynamicMap = field(default=None, repr=False)
 
-    moving_platforms: list[MovingPlatform] = field(default_factory=list, repr=False)
-    bumpers: list[Bumper] = field(default_factory=list, repr=False)
-    falling_platforms: list[FallingPlatform] = field(default_factory=list, repr=False)
-    checkpoints: list[Checkpoint] = field(default_factory=list, repr=False)
-    camera_triggers: list[CameraTrigger] = field(default_factory=list, repr=False)
-    prisms: list[Prism] = field(default_factory=list, repr=False)
-    buttons: list[Button] = field(default_factory=list, repr=False)
     button_sequences: list[ButtonSequence] = field(default_factory=list, repr=False)
-    othercubes: list[HoloCube] = field(default_factory=list, repr=False)
-    resizers: list[Resizer] = field(default_factory=list, repr=False)
 
     def __post_init__(self):
         if self.model_theme is None:
@@ -106,9 +96,17 @@ class Level:
     def size(self):
         return self.static_map.size
 
+    @property
+    def spawn_point(self):
+        return Point3D(*self.dynamic_map.get_all(SpawnPoint)[0][0])
+
+    @property
+    def exit_point(self):
+        return Point3D(*self.dynamic_map.get_all(ExitPoint)[0][0])
+
     @classmethod
     def read(cls, path):
-        kwargs = {}
+        kwargs: dict = {}
         with open(path, 'rb') as f:
             reader = BinaryReader(bytearray(f.read()))
 
@@ -150,34 +148,34 @@ class Level:
         collision_map = BitCube.read(reader, size)
         kwargs['static_map'] = collision_map.to_static_map()
 
-        kwargs['spawn_point'] = Point3D.read(reader)
-        assert kwargs['spawn_point'].z >= -20
+        spawn_point = SpawnPoint(Point3D.read(reader))
+        assert spawn_point._position.z >= -20
 
         kwargs['zoom'] = reader.read_int16()
         if kwargs['zoom'] < 0:
             kwargs['angle_or_fov'] = reader.read_int16()
             kwargs['is_angle'] = bool(reader.read_uint8())
 
-        kwargs['exit_point'] = Point3D.read(reader)
+        exit_point = ExitPoint(Point3D.read(reader))
 
         moving_platform_count = reader.read_uint16()
-        kwargs['moving_platforms'] = [MovingPlatform.read(reader) for _ in range(moving_platform_count)]
+        moving_platforms = [MovingPlatform.read(reader) for _ in range(moving_platform_count)]
 
         bumper_count = reader.read_uint16()
-        kwargs['bumpers'] = [Bumper.read(reader) for _ in range(bumper_count)]
+        bumpers = [Bumper.read(reader) for _ in range(bumper_count)]
 
         falling_platform_count = reader.read_uint16()
-        kwargs['falling_platforms'] = [FallingPlatform.read(reader) for _ in range(falling_platform_count)]
+        falling_platforms = [FallingPlatform.read(reader) for _ in range(falling_platform_count)]
 
         checkpoint_count = reader.read_uint16()
-        kwargs['checkpoints'] = [Checkpoint.read(reader) for _ in range(checkpoint_count)]
+        checkpoints = [Checkpoint.read(reader) for _ in range(checkpoint_count)]
 
         camera_trigger_count = reader.read_uint16()
-        kwargs['camera_triggers'] = [CameraTrigger.read(reader) for _ in range(camera_trigger_count)]
+        camera_triggers = [CameraTrigger.read(reader) for _ in range(camera_trigger_count)]
 
         prism_count = reader.read_uint16()
         assert prism_count == prisms_count
-        kwargs['prisms'] = [Prism.read(reader) for _ in range(prism_count)]
+        prisms = [Prism.read(reader) for _ in range(prism_count)]
 
         fan_count = reader.read_uint16()  # deprecated
         assert fan_count == 0
@@ -186,48 +184,50 @@ class Level:
         block_events = [BlockEvent.read(reader) for _ in range(block_event_count)]
 
         button_count = reader.read_uint16()
-        kwargs['buttons'] = [Button.read(reader) for _ in range(button_count)]
+        buttons = [Button.read(reader) for _ in range(button_count)]
 
         # resolve references in block events
         for event in block_events:
             if isinstance(event, AffectMovingPlatformEvent):
-                event.moving_platform = kwargs['moving_platforms'][event.moving_platform]
+                event.moving_platform = moving_platforms[event.moving_platform]
             elif isinstance(event, AffectBumperEvent):
-                event.bumper = kwargs['bumpers'][event.bumper]
+                event.bumper = bumpers[event.bumper]
             elif isinstance(event, AffectButtonEvent):
-                event.button = kwargs['buttons'][event.button]
+                event.button = buttons[event.button]
 
         # resolve references in buttons
-        for button in kwargs['buttons']:
+        for button in buttons:
             button.events = [block_events[i] for i in button.events]
             if button.moving_platform:
-                button.moving_platform = kwargs['moving_platforms'][button.moving_platform]
+                button.moving_platform = moving_platforms[button.moving_platform]
+                button._position = button.moving_platform._position + Point3D(0, 0, 1)
 
         # extract button sequences
         kwargs['button_sequences'] = []
-        for id, button in enumerate(kwargs['buttons']):
+        for id, button in enumerate(buttons):
+            print(button._parent_id)
             if button._children_count > 0:
-                children = [b for b in kwargs['buttons'] if b._parent_id == id]
+                children = [b for b in buttons if b._parent_id == id]
+                print(button._children_count, len(children))
                 assert button._children_count == len(children)
                 events = button.events
-                button.events = []
                 kwargs['button_sequences'].append(ButtonSequence(buttons=[button] + children,
                                                                  sequence_in_order=button._sequence_in_order,
                                                                  events=events))
 
         # remove elements which are part of a button sequence from buttons
-        kwargs['buttons'] = [b for b in kwargs['buttons'] if b._children_count == 0 and b._parent_id == -1]
+        # buttons = [b for b in buttons if b._children_count == 0 and b._parent_id == -1]
 
         othercube_count = reader.read_uint16()
-        kwargs['othercubes'] = [HoloCube.read(reader) for _ in range(othercube_count)]
+        othercubes = [HoloCube.read(reader) for _ in range(othercube_count)]
 
-        # resolve references in other cubes
-        for cube in kwargs['othercubes']:
+        # resolve references in othercubes
+        for cube in othercubes:
             if cube.moving_block_sync:
-                cube.moving_block_sync = kwargs['moving_platforms'][cube.moving_block_sync]
+                cube.moving_block_sync = moving_platforms[cube.moving_block_sync]
 
         resizer_count = reader.read_uint16()
-        kwargs['resizers'] = [Resizer.read(reader) for _ in range(resizer_count)]
+        resizers = [Resizer.read(reader) for _ in range(resizer_count)]
 
         mini_block_count = reader.read_uint16()  # deprecated
         assert mini_block_count == 0
@@ -235,6 +235,14 @@ class Level:
         kwargs['theme'] = Theme(reader.read_uint8())
         kwargs['music_java'] = MusicJava(reader.read_uint8())
         kwargs['music'] = Music(reader.read_uint8())
+
+        # generate map
+        kwargs['static_map'] = collision_map.to_static_map()
+        kwargs['dynamic_map'] = DynamicMap(size=kwargs['static_map'].size)
+        for part in sum((moving_platforms, bumpers, falling_platforms, checkpoints, camera_triggers, prisms, buttons,
+                        othercubes, resizers, [spawn_point], [exit_point]), start=[]):
+            if part._position is not None:
+                kwargs['dynamic_map'].setitem_append((part._position.x, part._position.y, part._position.z), part)
 
         level = cls(**kwargs)
         level._legacy_minimap = legacy_minimap
@@ -252,7 +260,7 @@ class Level:
         writer.write_uint16(self.b_time)
         writer.write_uint16(self.c_time)
 
-        writer.write_uint16(len(self.prisms))
+        writer.write_uint16(len(self.dynamic_map.get_all(Prism)))
 
         size = self.static_map.size
         size.write(writer)
@@ -291,36 +299,57 @@ class Level:
 
         self.exit_point.write(writer)
 
-        writer.write_uint16(len(self.moving_platforms))
-        for e in self.moving_platforms:
+        moving_platforms = self.dynamic_map.get_all(MovingPlatform)
+        writer.write_uint16(len(moving_platforms))
+        for pos, e in moving_platforms:
+            e._position = Point3D(*pos)
             e.write(writer)
 
-        writer.write_uint16(len(self.bumpers))
-        for e in self.bumpers:
+        bumpers = self.dynamic_map.get_all(Bumper)
+        writer.write_uint16(len(bumpers))
+        for pos, e in bumpers:
+            e._position = Point3D(*pos)
             e.write(writer)
 
-        writer.write_uint16(len(self.falling_platforms))
-        for e in self.falling_platforms:
+        falling_platforms = self.dynamic_map.get_all(FallingPlatform)
+        writer.write_uint16(len(falling_platforms))
+        for pos, e in falling_platforms:
+            e._position = Point3D(*pos)
             e.write(writer)
 
-        writer.write_uint16(len(self.checkpoints))
-        for e in self.checkpoints:
+        checkpoints = self.dynamic_map.get_all(Checkpoint)
+        writer.write_uint16(len(checkpoints))
+        for pos, e in checkpoints:
+            e._position = Point3D(*pos)
             e.write(writer)
 
-        writer.write_uint16(len(self.camera_triggers))
-        for e in self.camera_triggers:
+        camera_triggers = self.dynamic_map.get_all(CameraTrigger)
+        writer.write_uint16(len(camera_triggers))
+        for pos, e in camera_triggers:
+            e._position = Point3D(*pos)
             e.write(writer)
 
-        writer.write_uint16(len(self.prisms))
-        for e in self.prisms:
+        prisms = self.dynamic_map.get_all(Prism)
+        writer.write_uint16(len(prisms))
+        for pos, e in prisms:
+            e._position = Point3D(*pos)
             e.write(writer)
 
         writer.write_uint16(0)  # fans_count
 
+        buttons = self.dynamic_map.get_all(Button)
+        buttons_without_coords = [b[1] for b in buttons]
+        buttons_from_sequences = []
         # turn button sequences into normal buttons
+        print(self.button_sequences)
         for seq in self.button_sequences:
-            parent_id = len(self.buttons)
             parent = seq.buttons[0]
+            parent_id = len(buttons_from_sequences)
+
+            index = buttons_without_coords.index(parent)
+            coords = buttons.pop(index)[0]
+            buttons_without_coords.pop(index)
+
             parent._parent_id = -1
             parent._sequence_in_order = seq.sequence_in_order
             parent._children_count = len(seq.buttons) - 1
@@ -328,8 +357,8 @@ class Level:
                 print('overwriting events')
             parent.events = seq.events
             assert parent.mode == ButtonMode.STAY_DOWN
+            buttons_from_sequences.append((coords, parent))
 
-            self.buttons.append(parent)
             for child in seq.buttons[1:]:
                 assert child.events == []
                 assert child.mode == ButtonMode.STAY_DOWN
@@ -337,20 +366,26 @@ class Level:
 
                 child._sequence_in_order = seq.sequence_in_order
                 child._parent_id = parent_id
-                self.buttons.append(child)
+
+                index = buttons_without_coords.index(child)
+                coords = buttons.pop(index)[0]
+                buttons_without_coords.pop(index)
+                buttons_from_sequences.append((coords, child))
+
+        buttons = buttons_from_sequences + buttons
 
         # assign indices to everything that can be referenced
-        for i, p in enumerate(self.moving_platforms):
+        for i, (_, p) in enumerate(moving_platforms):
             assert p._id is None
             p._id = i
 
-        for i, b in enumerate(self.bumpers):
+        for i, (_, b) in enumerate(bumpers):
             assert b._id is None
             b._id = i
 
         event_id = 0
         block_events = []
-        for i, b in enumerate(self.buttons):
+        for i, (_, b) in enumerate(buttons):
             assert b._id is None
             b._id = i
 
@@ -367,16 +402,22 @@ class Level:
         for e in block_events:
             e.write(writer)
 
-        writer.write_uint16(len(self.buttons))
-        for e in self.buttons:
+        writer.write_uint16(len(buttons))
+        for pos, e in buttons:
+            print(e._id, e._parent_id)
+            e._position = Point3D(*pos)
             e.write(writer)
 
-        writer.write_uint16(len(self.othercubes))
-        for e in self.othercubes:
+        othercubes = self.dynamic_map.get_all(HoloCube)
+        writer.write_uint16(len(othercubes))
+        for pos, e in othercubes:
+            e._position = Point3D(*pos)
             e.write(writer)
 
-        writer.write_uint16(len(self.resizers))
-        for e in self.resizers:
+        resizers = self.dynamic_map.get_all(Resizer)
+        writer.write_uint16(len(resizers))
+        for pos, e in resizers:
+            e._position = Point3D(*pos)
             e.write(writer)
 
         writer.write_uint16(0)  # mini_blocks_count
@@ -391,8 +432,10 @@ class Level:
 
     def generate_model(self, levelname: str):
         def to_modelspace(v: Vec3D) -> Vec3D:
-            return (v - translates[self.model_theme.value] - Vec3D(0, 0, self.size.y)) * 10
+            return (v - translates[self.model_theme.value] - Vec3D(0, 0, size.y)) * 10
 
+        size = self.size
+        exit = self.exit_point
 
         models_namespace = 0x050DB82A
         materials = [0x2F2CC05D, 0x55ECE3AD, 0xC273F284, 0x0D11C513]
@@ -428,7 +471,7 @@ class Level:
             model = models[theme]
 
             # top face: only drawn when there is no full block above and the block is not overlapping with the exit
-            if model_map.get((x, y, z + 1), Block(height=0)).height < 1 and (abs(x - self.exit_point.x) > 1 or abs(y - self.exit_point.y) > 1 or z + 1 != self.exit_point.z):
+            if model_map.get((x, y, z + 1), Block(height=0)).height < 1 and (abs(x - exit.x) > 1 or abs(y - exit.y) > 1 or z + 1 != exit.z):
                 model.vertices.append(to_modelspace(Vec3D(x,     z + 1, y)))
                 model.vertices.append(to_modelspace(Vec3D(x + 1, z + 1, y)))
                 model.vertices.append(to_modelspace(Vec3D(x,     z + 1, y + 1)))
@@ -505,7 +548,7 @@ class Level:
                                        asset_child=AssetHash(name=child_models[self.model_theme.value],
                                                              namespace=models_namespace),
                                        bounding_min=to_modelspace(Vec3D(0, 0, 0)),
-                                       bounding_max=to_modelspace(Vec3D(self.size.x, self.size.z, self.size.y))),
+                                       bounding_max=to_modelspace(Vec3D(size.x, size.z, size.y))),
                   models=models)
 
         eso.write(generate_crc(name=name, namespace='models') + '.eso')
@@ -515,14 +558,34 @@ class Level:
 if __name__ == '__main__':
     np.set_printoptions(threshold=np.inf)
     t = time.time()
-    l = Level.read('level300.bin')
-
-    for p in l.moving_platforms:
-        p.waypoints = []
-
+    l = Level.read('babylonian_817.bin')
+    print('write')
     l.write('test.bin')
 
+    print('read')
+    test = Level.read('test.bin')
 
+    print(l == test)
+
+    # d = DynamicMap(size=Size3D(3, 4, 5))
+    #
+    # print(d[100].shape)
+    # print(d[100, 100].shape)
+    # print(d[100, 100, 100])
+    # print(d[:, :, 5])
+    #
+    # d[0, 0, 0] = MovingPlatform()
+    #
+    # d[-1, -2, -3] = Prism()
+    # print(d.offset)
+    #
+    # d[6, 7, 8] = Bumper()
+    # print(d.offset)
+    # print(d.map)
+    #
+    # print(d[0, 0, 0])
+    # print(d[-1, -2, -3])
+    # print(d[6, 7, 8])
 
 
     print(time.time() - t)

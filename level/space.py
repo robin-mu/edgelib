@@ -99,6 +99,8 @@ class BitCube:
     def to_static_map(self) -> StaticMap:
         return StaticMap(np.vectorize(lambda bit: Block.full() if bit else Block.empty())(self.data))
 
+    def __eq__(self, other):
+        return np.all(self.data == other.data)
 
 @dataclass(frozen=True, eq=True)
 class Block:
@@ -166,6 +168,21 @@ class DynamicMap:
                                            (max(0, bottom), max(0, top))),
                              constant_values=None)
 
+    def get_all(self, type) -> list:
+        mask = np.vectorize(lambda part: isinstance(part, type))(self.map)
+        coords = np.argwhere(mask)
+        coords_with_offset = coords - np.array(self.offset)
+        parts = list(zip([tuple(c) for c in coords_with_offset], self.map[tuple(coords.T)]))
+
+        arrays_mask = np.vectorize(lambda part: isinstance(part, list))(self.map)
+        arrays_coords = np.argwhere(arrays_mask)
+        for c in arrays_coords:
+            for part in self.map[tuple(c)]:
+                if isinstance(part, type):
+                    parts.append((tuple(c - np.array(self.offset)), part))
+
+        return parts
+
     def __getitem__(self, item):
         if not isinstance(item, tuple):
             item = item,
@@ -219,6 +236,24 @@ class DynamicMap:
 
         np.ndarray.__setitem__(self.map, tuple(key_plus_offset), value)
 
+    def setitem_append(self, coords: tuple, value) -> None:
+        """
+        In some cases, multiple dynamic parts are located at the same coordinate, e.g. moving platforms that are on the
+        same loop, but with different time offsets. Use this method to append a part to the parts which already are at
+        this coordinate.
+        """
+        current = self[coords]
+        if current is None:
+            item = value
+        elif isinstance(current, list):
+            item = current + [value]
+        else:
+            item = [current, value]
+
+        self[coords] = item
+
+    def __eq__(self, other):
+        return np.all(self.map == other.map) and self.offset == other.offset
 
 @dataclass
 class StaticMap:
@@ -231,7 +266,8 @@ class StaticMap:
 
     @property
     def size(self):
-        return Size3D(*self.blocks.shape)
+        mask = np.vectorize(lambda block: block != Block.empty())(self.blocks)
+        return Size3D(*(np.max(np.argwhere(mask), axis=0) + 1))
 
     @staticmethod
     def resize(arr, x=0, y=0, z=0):
@@ -266,3 +302,6 @@ class StaticMap:
 
     def __repr__(self):
         return str(self.blocks.T)
+
+    def __eq__(self, other):
+        return np.all(self.blocks == other.blocks)
