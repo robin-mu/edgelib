@@ -195,8 +195,13 @@ class DynamicMap:
             else:
                 pad_args.append(-c - self.offset[i])
                 pad_args.append(c + 1 - (self.map.shape[i] - self.offset[i]))
-        temp = DynamicMap.pad(self.map, *pad_args)
-        temp_offset = tuple(self.offset[i] + max(0, pad_args[2*i] if 2*i < len(pad_args) else 0) for i in range(3))
+
+        if any([arg > 0 for arg in pad_args]):
+            temp = DynamicMap.pad(self.map, *pad_args)
+            temp_offset = tuple(self.offset[i] + max(0, pad_args[2*i] if 2*i < len(pad_args) else 0) for i in range(3))
+        else:
+            temp = self.map
+            temp_offset = self.offset
 
         item_plus_offset = []
         for i, c in enumerate(item):
@@ -221,8 +226,10 @@ class DynamicMap:
             else:
                 pad_args.append(-c - self.offset[i])
                 pad_args.append(c + 1 - (self.map.shape[i] - self.offset[i]))
-        self.map = DynamicMap.pad(self.map, *pad_args)
-        self.offset = tuple(self.offset[i] + max(0, pad_args[2*i] if 2*i < len(pad_args) else 0) for i in range(3))
+
+        if any([arg > 0 for arg in pad_args]):
+            self.map = DynamicMap.pad(self.map, *pad_args)
+            self.offset = tuple(self.offset[i] + max(0, pad_args[2*i] if 2*i < len(pad_args) else 0) for i in range(3))
 
         key_plus_offset = []
         for i, c in enumerate(key):
@@ -289,7 +296,11 @@ class StaticMap:
             item = item,
 
         size = [c.stop if isinstance(c, slice) else c + 1 for c in item]
-        temp = StaticMap.resize(self.blocks, *size)
+
+        if any([s > self.blocks.shape[i] for i, s in enumerate(size)]):
+            temp = StaticMap.resize(self.blocks, *size)
+        else:
+            temp = self.blocks
         return np.ndarray.__getitem__(temp, item)
 
     def __setitem__(self, key, value):
@@ -297,7 +308,10 @@ class StaticMap:
             key = key,
 
         size = [c.stop if isinstance(c, slice) else c + 1 for c in key]
-        self.blocks = StaticMap.resize(self.blocks, *size)
+
+        if any([s > self.blocks.shape[i] for i, s in enumerate(size)]):
+            self.blocks = StaticMap.resize(self.blocks, *size)
+
         np.ndarray.__setitem__(self.blocks, key, value)
 
     def __repr__(self):
