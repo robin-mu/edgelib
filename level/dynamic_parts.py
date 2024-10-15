@@ -7,13 +7,32 @@ from binary_reader import BinaryReader
 from level.events import KeyEvent, BlockEvent
 from level.space import Point3D, Size2D
 
+class DynamicPart:
+    def __radd__(self, other):
+        """
+        In some cases, multiple dynamic parts are located at the same coordinate, e.g. moving platforms that are on the
+        same loop, but with different time offsets. With this method dynamic parts can be added together (or to a list
+        of dynamic parts), which will result in a list.
+        """
+        if other is None:
+            return self
+        elif isinstance(other, list):
+            return other + [self]
+        else:
+            return [other, self]
+
+    def __add__(self, other):
+        if isinstance(other, DynamicPart):
+            return other.__radd__(self)
+
+
 @dataclass(frozen=True, slots=True)
-class SpawnPoint:
+class SpawnPoint(DynamicPart):
     _position: field(compare=False)
 
 
 @dataclass(frozen=True, slots=True)
-class ExitPoint:
+class ExitPoint(DynamicPart):
     _position: field(compare=False)
 
 
@@ -41,7 +60,7 @@ class Waypoint:
 
 
 @dataclass
-class MovingPlatform:
+class MovingPlatform(DynamicPart):
     """
     :cvar loop_start_index: None means the platform will not loop, i.e. stop at its last waypoint. An int denotes the
     waypoint index (starting from 0) to which the platform will return to after the last waypoint
@@ -108,7 +127,7 @@ class BumperSide:
 
 
 @dataclass
-class Bumper:
+class Bumper(DynamicPart):
     """
     North is -Y or top-right
     :cvar _id: This is only used internally when writing a level and should not be changed manually
@@ -145,7 +164,7 @@ class Bumper:
 
 
 @dataclass
-class FallingPlatform:
+class FallingPlatform(DynamicPart):
     float_time: int = 20
 
     _position: Point3D = field(default=None, init=False, repr=False, compare=False)
@@ -163,7 +182,7 @@ class FallingPlatform:
 
 
 @dataclass
-class Checkpoint:
+class Checkpoint(DynamicPart):
     respawn_z: int = 0
     radius: Size2D = field(default_factory=Size2D)
 
@@ -183,7 +202,7 @@ class Checkpoint:
 
 
 @dataclass
-class CameraTrigger:
+class CameraTrigger(DynamicPart):
     zoom: int = -1
     radius: Size2D = field(default_factory=Size2D)
     reset: bool = None  # seems to be only True when is_angle is False
@@ -229,7 +248,7 @@ class CameraTrigger:
 
 
 @dataclass
-class Prism:
+class Prism(DynamicPart):
     _energy: int = field(default=1, repr=False, init=False)  # deprecated
 
     _position: Point3D = field(default=None, init=False, repr=False, compare=False)
@@ -268,7 +287,7 @@ class ButtonMode(Enum):
 
 
 @dataclass
-class Button:
+class Button(DynamicPart):
     """
     :cvar disable_count: How many times the button can be disabled before it can no longer be re-enabled by other buttons (0 means infinite)
     :cvar _id: This is only used internally when writing a level and should not be changed manually
@@ -352,7 +371,7 @@ class ButtonSequence:
 
 
 @dataclass
-class HoloCube:
+class HoloCube(DynamicPart):
     """
     :cvar moving_block_sync: The ID of the moving platform to sync with. The holocube will start
     moving when the specified moving platform reaches its first waypoint. A value of -1 means no sync.
@@ -414,7 +433,7 @@ class ResizerDirection(Enum):
 
 
 @dataclass
-class Resizer:
+class Resizer(DynamicPart):
     direction: ResizerDirection
     visible: bool = True
 

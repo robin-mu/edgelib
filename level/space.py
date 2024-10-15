@@ -246,18 +246,10 @@ class DynamicMap:
     def setitem_append(self, coords: tuple, value) -> None:
         """
         In some cases, multiple dynamic parts are located at the same coordinate, e.g. moving platforms that are on the
-        same loop, but with different time offsets. Use this method to append a part to the parts which already are at
-        this coordinate.
+        same loop, but with different time offsets. To append a part to the parts which already are at this coordinate,
+        you can use ``map[coords] += value``.
         """
-        current = self[coords]
-        if current is None:
-            item = value
-        elif isinstance(current, list):
-            item = current + [value]
-        else:
-            item = [current, value]
-
-        self[coords] = item
+        self[coords] += value
 
     def __eq__(self, other):
         return np.all(self.map == other.map) and self.offset == other.offset

@@ -205,10 +205,8 @@ class Level:
         # extract button sequences
         kwargs['button_sequences'] = []
         for id, button in enumerate(buttons):
-            print(button._parent_id)
             if button._children_count > 0:
                 children = [b for b in buttons if b._parent_id == id]
-                print(button._children_count, len(children))
                 assert button._children_count == len(children)
                 events = button.events
                 kwargs['button_sequences'].append(ButtonSequence(buttons=[button] + children,
@@ -242,7 +240,7 @@ class Level:
         for part in sum((moving_platforms, bumpers, falling_platforms, checkpoints, camera_triggers, prisms, buttons,
                         othercubes, resizers, [spawn_point], [exit_point]), start=[]):
             if part._position is not None:
-                kwargs['dynamic_map'].setitem_append((part._position.x, part._position.y, part._position.z), part)
+                kwargs['dynamic_map'][part._position.x, part._position.y, part._position.z] += part
 
         level = cls(**kwargs)
         level._legacy_minimap = legacy_minimap
@@ -341,7 +339,6 @@ class Level:
         buttons_without_coords = [b[1] for b in buttons]
         buttons_from_sequences = []
         # turn button sequences into normal buttons
-        print(self.button_sequences)
         for seq in self.button_sequences:
             parent = seq.buttons[0]
             parent_id = len(buttons_from_sequences)
@@ -404,7 +401,6 @@ class Level:
 
         writer.write_uint16(len(buttons))
         for pos, e in buttons:
-            print(e._id, e._parent_id)
             e._position = Point3D(*pos)
             e.write(writer)
 
@@ -559,16 +555,16 @@ if __name__ == '__main__':
     np.set_printoptions(threshold=np.inf)
     t = time.time()
     l = Level.read('babylonian_817.bin')
-    print('write')
     l.write('test.bin')
 
-    print('read')
     test = Level.read('test.bin')
-
     print(l == test)
 
+    # print(l.static_map[1, 2, 3])
+    #
     # d = DynamicMap(size=Size3D(3, 4, 5))
     #
+    # print(d[1, 2, 3])
     # print(d[100].shape)
     # print(d[100, 100].shape)
     # print(d[100, 100, 100])
