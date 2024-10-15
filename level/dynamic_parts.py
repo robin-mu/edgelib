@@ -25,15 +25,13 @@ class DynamicPart:
         if isinstance(other, DynamicPart):
             return other.__radd__(self)
 
-
-@dataclass(frozen=True, slots=True)
+@dataclass
 class SpawnPoint(DynamicPart):
-    _position: field(compare=False)
+    pass
 
-
-@dataclass(frozen=True, slots=True)
+@dataclass
 class ExitPoint(DynamicPart):
-    _position: field(compare=False)
+    pass
 
 
 @dataclass
@@ -41,8 +39,6 @@ class Waypoint:
     offset: Point3D = Point3D(0, 0, 0)
     travel_time: int = 0
     pause_time: int = 0
-
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -71,9 +67,6 @@ class MovingPlatform(DynamicPart):
     waypoints: list[Waypoint] = field(default_factory=list, repr=False)
 
     _clones: int = field(default=-1, repr=False, init=False)  # deprecated
-
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
-    _id: int = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -138,9 +131,6 @@ class Bumper(DynamicPart):
     south: BumperSide = field(default_factory=BumperSide)
     west: BumperSide = field(default_factory=BumperSide)
 
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
-    _id: int = field(default=None, init=False, repr=False, compare=False)
-
     @classmethod
     def read(cls, reader: BinaryReader):
         kwargs = dict(enabled=bool(reader.read_uint8()))
@@ -167,8 +157,6 @@ class Bumper(DynamicPart):
 class FallingPlatform(DynamicPart):
     float_time: int = 20
 
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
-
     @classmethod
     def read(cls, reader: BinaryReader):
         position = Point3D.read(reader)
@@ -185,8 +173,6 @@ class FallingPlatform(DynamicPart):
 class Checkpoint(DynamicPart):
     respawn_z: int = 0
     radius: Size2D = field(default_factory=Size2D)
-
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -211,8 +197,6 @@ class CameraTrigger(DynamicPart):
     angle_or_fov: int = 22
     single_use: bool = False
     is_angle: bool = None
-
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -250,8 +234,6 @@ class CameraTrigger(DynamicPart):
 @dataclass
 class Prism(DynamicPart):
     _energy: int = field(default=1, repr=False, init=False)  # deprecated
-
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -303,9 +285,6 @@ class Button(DynamicPart):
     moving_platform: MovingPlatform = None
 
     events: list[BlockEvent] = field(default_factory=list, repr=False)
-
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
-    _id: int = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -380,8 +359,6 @@ class HoloCube(DynamicPart):
     moving_block_sync: MovingPlatform | NoneType = None
     key_events: list[KeyEvent] = field(default_factory=list)
 
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
-
     @classmethod
     def read(cls, reader: BinaryReader):
         kwargs = {}
@@ -436,8 +413,6 @@ class ResizerDirection(Enum):
 class Resizer(DynamicPart):
     direction: ResizerDirection
     visible: bool = True
-
-    _position: Point3D = field(default=None, init=False, repr=False, compare=False)
 
     @classmethod
     def read(cls, reader: BinaryReader):

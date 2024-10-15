@@ -36,8 +36,6 @@ class BlockEvent:
     """
     :cvar _id: This is only used internally when writing a level and should not be changed manually
     """
-    _id: int = field(default=None, init=False, repr=False, compare=False)
-
     @classmethod
     def read(cls, reader: BinaryReader):
         type = BlockEventType(reader.read_uint8())

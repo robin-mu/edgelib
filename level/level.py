@@ -148,15 +148,15 @@ class Level:
         collision_map = BitCube.read(reader, size)
         kwargs['static_map'] = collision_map.to_static_map()
 
-        spawn_point = SpawnPoint(Point3D.read(reader))
-        assert spawn_point._position.z >= -20
+        spawn_point = Point3D.read(reader)
+        assert spawn_point.z >= -20
 
         kwargs['zoom'] = reader.read_int16()
         if kwargs['zoom'] < 0:
             kwargs['angle_or_fov'] = reader.read_int16()
             kwargs['is_angle'] = bool(reader.read_uint8())
 
-        exit_point = ExitPoint(Point3D.read(reader))
+        exit_point = Point3D.read(reader)
 
         moving_platform_count = reader.read_uint16()
         moving_platforms = [MovingPlatform.read(reader) for _ in range(moving_platform_count)]
@@ -238,15 +238,82 @@ class Level:
         kwargs['static_map'] = collision_map.to_static_map()
         kwargs['dynamic_map'] = DynamicMap(size=kwargs['static_map'].size)
         for part in sum((moving_platforms, bumpers, falling_platforms, checkpoints, camera_triggers, prisms, buttons,
-                        othercubes, resizers, [spawn_point], [exit_point]), start=[]):
-            if part._position is not None:
-                kwargs['dynamic_map'][part._position.x, part._position.y, part._position.z] += part
+                        othercubes, resizers), start=[]):
+            kwargs['dynamic_map'][part._position.x, part._position.y, part._position.z] += part
+            del part._position
+
+        kwargs['dynamic_map'][spawn_point.x, spawn_point.y, spawn_point.z] = SpawnPoint()
+        kwargs['dynamic_map'][exit_point.x, exit_point.y, exit_point.z] = ExitPoint()
 
         level = cls(**kwargs)
         level._legacy_minimap = legacy_minimap
         return level
 
-    def write(self, path):
+    def write(self, path, generate_model=True):
+        moving_platforms = self.dynamic_map.get_all(MovingPlatform)
+        bumpers = self.dynamic_map.get_all(Bumper)
+        buttons = self.dynamic_map.get_all(Button)
+
+        # turn button sequences into normal buttons
+        buttons_without_coords = [b[1] for b in buttons]
+        buttons_from_sequences = []
+        for seq in self.button_sequences:
+            parent = seq.buttons[0]
+            parent_id = len(buttons_from_sequences)
+
+            index = buttons_without_coords.index(parent)
+            coords = buttons.pop(index)[0]
+            buttons_without_coords.pop(index)
+
+            parent._parent_id = -1
+            parent._sequence_in_order = seq.sequence_in_order
+            parent._children_count = len(seq.buttons) - 1
+            if parent.events:
+                print('overwriting events')
+            parent.events = seq.events
+            assert parent.mode == ButtonMode.STAY_DOWN
+            buttons_from_sequences.append((coords, parent))
+
+            for child in seq.buttons[1:]:
+                assert child.events == []
+                assert child.mode == ButtonMode.STAY_DOWN
+                assert child._children_count == 0
+
+                child._sequence_in_order = seq.sequence_in_order
+                child._parent_id = parent_id
+
+                index = buttons_without_coords.index(child)
+                coords = buttons.pop(index)[0]
+                buttons_without_coords.pop(index)
+                buttons_from_sequences.append((coords, child))
+
+        buttons = buttons_from_sequences + buttons
+
+        # assign indices to everything that can be referenced
+        for i, (_, p) in enumerate(moving_platforms):
+            assert not hasattr(p, '_id')
+            p._id = i
+
+        for i, (_, b) in enumerate(bumpers):
+            assert not hasattr(b, '_id')
+            b._id = i
+
+        # create block events
+        event_id = 0
+        block_events = []
+        for i, (_, b) in enumerate(buttons):
+            assert not hasattr(b, '_id')
+            b._id = i
+
+            for e in b.events:
+                if hasattr(e, '_id'):
+                    print('duplicate blockevent')
+                    continue
+
+                e._id = event_id
+                block_events.append(e)
+                event_id += 1
+
         writer = BinaryReader()
         writer.write_int32(self.id)
         writer.write_int32(len(self.name))
@@ -297,103 +364,47 @@ class Level:
 
         self.exit_point.write(writer)
 
-        moving_platforms = self.dynamic_map.get_all(MovingPlatform)
         writer.write_uint16(len(moving_platforms))
         for pos, e in moving_platforms:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
-        bumpers = self.dynamic_map.get_all(Bumper)
         writer.write_uint16(len(bumpers))
         for pos, e in bumpers:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
         falling_platforms = self.dynamic_map.get_all(FallingPlatform)
         writer.write_uint16(len(falling_platforms))
         for pos, e in falling_platforms:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
         checkpoints = self.dynamic_map.get_all(Checkpoint)
         writer.write_uint16(len(checkpoints))
         for pos, e in checkpoints:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
         camera_triggers = self.dynamic_map.get_all(CameraTrigger)
         writer.write_uint16(len(camera_triggers))
         for pos, e in camera_triggers:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
         prisms = self.dynamic_map.get_all(Prism)
         writer.write_uint16(len(prisms))
         for pos, e in prisms:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
         writer.write_uint16(0)  # fans_count
-
-        buttons = self.dynamic_map.get_all(Button)
-        buttons_without_coords = [b[1] for b in buttons]
-        buttons_from_sequences = []
-        # turn button sequences into normal buttons
-        for seq in self.button_sequences:
-            parent = seq.buttons[0]
-            parent_id = len(buttons_from_sequences)
-
-            index = buttons_without_coords.index(parent)
-            coords = buttons.pop(index)[0]
-            buttons_without_coords.pop(index)
-
-            parent._parent_id = -1
-            parent._sequence_in_order = seq.sequence_in_order
-            parent._children_count = len(seq.buttons) - 1
-            if parent.events:
-                print('overwriting events')
-            parent.events = seq.events
-            assert parent.mode == ButtonMode.STAY_DOWN
-            buttons_from_sequences.append((coords, parent))
-
-            for child in seq.buttons[1:]:
-                assert child.events == []
-                assert child.mode == ButtonMode.STAY_DOWN
-                assert child._children_count == 0
-
-                child._sequence_in_order = seq.sequence_in_order
-                child._parent_id = parent_id
-
-                index = buttons_without_coords.index(child)
-                coords = buttons.pop(index)[0]
-                buttons_without_coords.pop(index)
-                buttons_from_sequences.append((coords, child))
-
-        buttons = buttons_from_sequences + buttons
-
-        # assign indices to everything that can be referenced
-        for i, (_, p) in enumerate(moving_platforms):
-            assert p._id is None
-            p._id = i
-
-        for i, (_, b) in enumerate(bumpers):
-            assert b._id is None
-            b._id = i
-
-        event_id = 0
-        block_events = []
-        for i, (_, b) in enumerate(buttons):
-            assert b._id is None
-            b._id = i
-
-            for e in b.events:
-                if e._id is not None:
-                    print('duplicate blockevent')
-                    continue
-
-                e._id = event_id
-                block_events.append(e)
-                event_id += 1
 
         writer.write_uint16(len(block_events))
         for e in block_events:
@@ -403,18 +414,21 @@ class Level:
         for pos, e in buttons:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
         othercubes = self.dynamic_map.get_all(HoloCube)
         writer.write_uint16(len(othercubes))
         for pos, e in othercubes:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
         resizers = self.dynamic_map.get_all(Resizer)
         writer.write_uint16(len(resizers))
         for pos, e in resizers:
             e._position = Point3D(*pos)
             e.write(writer)
+            del e._position
 
         writer.write_uint16(0)  # mini_blocks_count
         writer.write_uint8(self.theme.value)
@@ -424,7 +438,14 @@ class Level:
         with open(path, 'wb') as f:
             f.write(writer.buffer())
 
-        self.generate_model(path)
+        for (_, e) in moving_platforms + bumpers + buttons:
+            del e._id
+
+        for e in block_events:
+            del e._id
+
+        if generate_model:
+            self.generate_model(path)
 
     def generate_model(self, levelname: str):
         def to_modelspace(v: Vec3D) -> Vec3D:
@@ -554,11 +575,16 @@ class Level:
 if __name__ == '__main__':
     np.set_printoptions(threshold=np.inf)
     t = time.time()
-    l = Level.read('babylonian_817.bin')
+    l = Level.read('level309.bin')
+    print('write test.bin')
     l.write('test.bin')
+    print('write test2.bin')
+    l.write('test2.bin')
 
     test = Level.read('test.bin')
+    test2 = Level.read('test2.bin')
     print(l == test)
+    print(l == test2)
 
     # print(l.static_map[1, 2, 3])
     #
