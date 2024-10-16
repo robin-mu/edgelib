@@ -172,7 +172,7 @@ class FallingPlatform(DynamicPart):
 @dataclass
 class Checkpoint(DynamicPart):
     respawn_z: int = 0
-    radius: Size2D = field(default_factory=Size2D)
+    radius: Size2D = field(default_factory=Size2D.ones)
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -190,13 +190,13 @@ class Checkpoint(DynamicPart):
 @dataclass
 class CameraTrigger(DynamicPart):
     zoom: int = -1
-    radius: Size2D = field(default_factory=Size2D)
-    reset: bool = None  # seems to be only True when is_angle is False
+    radius: Size2D = field(default_factory=Size2D.ones)
+    reset: bool = False  # seems to be only True when is_angle is False
     start_delay: int = 0
     duration: int = 0
     angle_or_fov: int = 22
     single_use: bool = False
-    is_angle: bool = None
+    is_angle: bool = False
 
     @classmethod
     def read(cls, reader: BinaryReader):
@@ -272,7 +272,6 @@ class ButtonMode(Enum):
 class Button(DynamicPart):
     """
     :cvar disable_count: How many times the button can be disabled before it can no longer be re-enabled by other buttons (0 means infinite)
-    :cvar _id: This is only used internally when writing a level and should not be changed manually
     """
     visible: ButtonVisibility = ButtonVisibility.VISIBLE
     disable_count: int = 0
@@ -353,9 +352,10 @@ class ButtonSequence:
 class HoloCube(DynamicPart):
     """
     :cvar moving_block_sync: The ID of the moving platform to sync with. The holocube will start
-    moving when the specified moving platform reaches its first waypoint. A value of -1 means no sync.
+    moving when the specified moving platform reaches its first waypoint. ``None`` means no sync.
     """
-    offset_cube: Point3D
+    position_cube: Point3D = None
+    offset_cube: Point3D = None
     moving_block_sync: MovingPlatform | NoneType = None
     key_events: list[KeyEvent] = field(default_factory=list)
 
@@ -374,8 +374,7 @@ class HoloCube(DynamicPart):
         kwargs['moving_block_sync'] = None if moving_block_sync == -1 else moving_block_sync
 
         key_event_count = reader.read_uint16()
-        position_cube = Point3D.read(reader)
-        kwargs['offset_cube'] = position_cube - position_trigger
+        kwargs['position_cube'] = Point3D.read(reader)
         kwargs['key_events'] = [KeyEvent.read(reader) for _ in range(key_event_count)]
 
         if dark_cube:
@@ -391,17 +390,20 @@ class HoloCube(DynamicPart):
         if isinstance(self, DarkCube):
             writer.write_int16(-2)  # dark cube
             self.radius.write(writer)
-        writer.write_int16(self.moving_block_sync._id if self.moving_block_sync else -1)
+        writer.write_int16(self.moving_block_sync._id if self.moving_block_sync is not None else -1)
         writer.write_uint16(len(self.key_events))
 
-        position_cube = self._position + self.offset_cube
-        position_cube.write(writer)
+        if self.offset_cube is not None:
+            assert self.position_cube is None
+            self.position_cube = self._position + self.offset_cube
+
+        self.position_cube.write(writer)
         for e in self.key_events:
             e.write(writer)
 
 @dataclass
 class DarkCube(HoloCube):
-    radius: Size2D = field(default_factory=Size2D)
+    radius: Size2D = field(default_factory=Size2D.ones)
 
 
 class ResizerDirection(Enum):

@@ -84,7 +84,7 @@ class Level:
     model_theme: Theme = None
     music_java: MusicJava = MusicJava.MENUS
     music: Music = Music.KAKKOI
-    zoom: int = -1
+    zoom: int = 0
     angle_or_fov: int = 0
     is_angle: bool = False
 
@@ -216,7 +216,7 @@ class Level:
         # resolve references in buttons
         for button in buttons:
             button.events = [block_events[i] for i in button.events]
-            if button.moving_platform:
+            if button.moving_platform is not None:
                 button.moving_platform = moving_platforms[button.moving_platform]
                 button._position = button.moving_platform._position + Point3D(0, 0, 1)
 
@@ -239,7 +239,7 @@ class Level:
 
         # resolve references in othercubes
         for cube in othercubes:
-            if cube.moving_block_sync:
+            if cube.moving_block_sync is not None:
                 cube.moving_block_sync = moving_platforms[cube.moving_block_sync]
 
         resizer_count = reader.read_uint16()
@@ -590,7 +590,7 @@ class Level:
 if __name__ == '__main__':
     np.set_printoptions(threshold=np.inf)
     t = time.time()
-    l = Level.read('babylonian_817.bin')
+    l = Level.read('level36.bin')
     print('write test.bin')
     l.write('test.bin')
     print('write test2.bin')
