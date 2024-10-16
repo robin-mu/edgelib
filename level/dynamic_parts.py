@@ -28,21 +28,20 @@ class DynamicPart:
 
 @dataclass
 class Waypoint:
-    offset: Point3D = Point3D(0, 0, 0)
+    offset_to_start: Point3D = None
+    offset_to_previous_waypoint: Point3D = None
+    position: Point3D = None
     travel_time: int = 0
     pause_time: int = 0
 
     @classmethod
     def read(cls, reader: BinaryReader):
-        position = Point3D.read(reader)
-
-        waypoint = cls(travel_time=reader.read_uint16(),
-                       pause_time=reader.read_uint16())
-        waypoint._position = position
-        return waypoint
+        return cls(position=Point3D.read(reader),
+                   travel_time=reader.read_uint16(),
+                   pause_time=reader.read_uint16())
 
     def write(self, writer: BinaryReader):
-        self._position.write(writer)
+        self.position.write(writer)
         writer.write_uint16(self.travel_time)
         writer.write_uint16(self.pause_time)
 
@@ -76,9 +75,7 @@ class MovingPlatform(DynamicPart):
 
         waypoint_count = reader.read_uint8()
         waypoints = [Waypoint.read(reader) for _ in range(waypoint_count)]
-        position = waypoints[0]._position
-        for w in waypoints:
-            w.offset = w._position - position
+        position = waypoints[0].position
         kwargs['waypoints'] = waypoints
 
         p = cls(**kwargs)
@@ -92,9 +89,19 @@ class MovingPlatform(DynamicPart):
         writer.write_int16(self._clones)
         writer.write_uint8(self.full_block)
         writer.write_uint8(len(self.waypoints))
+
+        previous_waypoint = self._position
         for w in self.waypoints:
-            w._position = self._position + w.offset
+            if w.offset_to_start is not None:
+                assert w.position is None and w.offset_to_previous_waypoint is None
+                w.position = self._position + w.offset_to_start
+            elif w.offset_to_previous_waypoint is not None:
+                assert w.position is None and w.offset_to_start is None
+                w.position = previous_waypoint + w.offset_to_previous_waypoint
+            assert w.position is not None
             w.write(writer)
+
+            previous_waypoint = w.position
 
 
 @dataclass
