@@ -24,6 +24,10 @@ class Size2D:
         writer.write_uint8(self.x)
         writer.write_uint8(self.y)
 
+    @classmethod
+    def ones(cls):
+        return cls(1, 1)
+
 @dataclass(frozen=True)
 class Size3D:
     x: int
