@@ -25,14 +25,6 @@ class DynamicPart:
         if isinstance(other, DynamicPart):
             return other.__radd__(self)
 
-@dataclass
-class SpawnPoint(DynamicPart):
-    pass
-
-@dataclass
-class ExitPoint(DynamicPart):
-    pass
-
 
 @dataclass
 class Waypoint:
@@ -107,6 +99,7 @@ class MovingPlatform(DynamicPart):
 
 @dataclass
 class BumperSide:
+    # TODO what does -1 mean?
     start_delay: int = -1
     pulse_rate: int = -1
 

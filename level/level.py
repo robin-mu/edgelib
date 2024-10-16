@@ -7,7 +7,7 @@ from binary_reader import BinaryReader
 
 from level.crc_gen import generate_crc
 from level.dynamic_parts import MovingPlatform, Bumper, FallingPlatform, Checkpoint, CameraTrigger, Prism, Button, \
-    HoloCube, Resizer, ButtonSequence, ButtonMode, SpawnPoint, ExitPoint
+    HoloCube, Resizer, ButtonSequence, ButtonMode
 from level.events import BlockEvent, AffectMovingPlatformEvent, AffectBumperEvent, AffectButtonEvent
 from level.space import Size3D, Point3D, BitCube, StaticMap, DynamicMap, Block
 from model.model import ESOModel, AssetHash, TypeFlag, ESO, AssetHeader, EngineVersion, ESOHeader
@@ -66,7 +66,14 @@ class Music(Enum):
 
 @dataclass
 class Level:
+    """
+    Providing a size is not necessary, as the level map will expand automatically as you add elements, and the level
+    size will be calculated when saving the level.
+    """
+
     id: int
+    spawn_point: Point3D
+    exit_point: Point3D
     name: str = ''
     s_plus_time: int = 1
     s_time: int = 2
@@ -81,7 +88,7 @@ class Level:
     angle_or_fov: int = 0
     is_angle: bool = False
 
-    _legacy_minimap: BitCube = field(default=None, repr=False, init=False)
+    _legacy_minimap: BitCube = field(default=None, repr=False, init=False)  # deprecated
 
     static_map: StaticMap = field(default=None, repr=False)
     dynamic_map: DynamicMap = field(default=None, repr=False)
@@ -91,18 +98,27 @@ class Level:
     def __post_init__(self):
         if self.model_theme is None:
             self.model_theme = self.theme
+        if self.static_map is None:
+            self.static_map = StaticMap(size=Size3D(1, 1, 1))
+        if self.dynamic_map is None:
+            self.dynamic_map = DynamicMap(size=Size3D(1, 1, 1))
 
     @property
     def size(self):
         return self.static_map.size
 
-    @property
-    def spawn_point(self):
-        return Point3D(*self.dynamic_map.get_all(SpawnPoint)[0][0])
+    def __getitem__(self, item):
+        static = self.static_map.__getitem__(item)
+        if static != Block.empty():
+            return static
+        else:
+            return self.dynamic_map.__getitem__(item)
 
-    @property
-    def exit_point(self):
-        return Point3D(*self.dynamic_map.get_all(ExitPoint)[0][0])
+    def __setitem__(self, key, value):
+        if isinstance(value, Block) or (isinstance(value, np.ndarray) and all([isinstance(b, Block) for b in value.flat])):
+            self.static_map.__setitem__(key, value)
+        else:
+            self.dynamic_map.__setitem__(key, value)
 
     @classmethod
     def read(cls, path):
@@ -149,6 +165,7 @@ class Level:
         kwargs['static_map'] = collision_map.to_static_map()
 
         spawn_point = Point3D.read(reader)
+        kwargs['spawn_point'] = spawn_point
         assert spawn_point.z >= -20
 
         kwargs['zoom'] = reader.read_int16()
@@ -157,6 +174,7 @@ class Level:
             kwargs['is_angle'] = bool(reader.read_uint8())
 
         exit_point = Point3D.read(reader)
+        kwargs['exit_point'] = exit_point
 
         moving_platform_count = reader.read_uint16()
         moving_platforms = [MovingPlatform.read(reader) for _ in range(moving_platform_count)]
@@ -241,9 +259,6 @@ class Level:
                         othercubes, resizers), start=[]):
             kwargs['dynamic_map'][part._position.x, part._position.y, part._position.z] += part
             del part._position
-
-        kwargs['dynamic_map'][spawn_point.x, spawn_point.y, spawn_point.z] = SpawnPoint()
-        kwargs['dynamic_map'][exit_point.x, exit_point.y, exit_point.z] = ExitPoint()
 
         level = cls(**kwargs)
         level._legacy_minimap = legacy_minimap
@@ -575,7 +590,7 @@ class Level:
 if __name__ == '__main__':
     np.set_printoptions(threshold=np.inf)
     t = time.time()
-    l = Level.read('level309.bin')
+    l = Level.read('babylonian_817.bin')
     print('write test.bin')
     l.write('test.bin')
     print('write test2.bin')
