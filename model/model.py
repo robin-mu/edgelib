@@ -279,7 +279,3 @@ class ESO:
 
         with open(path, 'wb') as f:
             f.write(writer.buffer())
-
-if __name__ == '__main__':
-    ESO.read('12222669050DB82A.eso').write('test.eso')
-    print(ESO.read('test.eso'))

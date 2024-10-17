@@ -164,17 +164,15 @@ class Level:
         collision_map = BitCube.read(reader, size)
         kwargs['static_map'] = collision_map.to_static_map()
 
-        spawn_point = Point3D.read(reader)
-        kwargs['spawn_point'] = spawn_point
-        assert spawn_point.z >= -20
+        kwargs['spawn_point'] = Point3D.read(reader)
+        assert kwargs['spawn_point'].z >= -20
 
         kwargs['zoom'] = reader.read_int16()
         if kwargs['zoom'] < 0:
             kwargs['angle_or_fov'] = reader.read_int16()
             kwargs['is_angle'] = bool(reader.read_uint8())
 
-        exit_point = Point3D.read(reader)
-        kwargs['exit_point'] = exit_point
+        kwargs['exit_point'] = Point3D.read(reader)
 
         moving_platform_count = reader.read_uint16()
         moving_platforms = [MovingPlatform.read(reader) for _ in range(moving_platform_count)]
@@ -584,45 +582,3 @@ class Level:
                   models=models)
 
         eso.write(generate_crc(name=name, namespace='models') + '.eso')
-
-
-
-if __name__ == '__main__':
-    np.set_printoptions(threshold=np.inf)
-    t = time.time()
-    l = Level.read('level36.bin')
-    print('write test.bin')
-    l.write('test.bin')
-    print('write test2.bin')
-    l.write('test2.bin')
-
-    test = Level.read('test.bin')
-    test2 = Level.read('test2.bin')
-    print(l == test)
-    print(l == test2)
-
-    # print(l.static_map[1, 2, 3])
-    #
-    # d = DynamicMap(size=Size3D(3, 4, 5))
-    #
-    # print(d[1, 2, 3])
-    # print(d[100].shape)
-    # print(d[100, 100].shape)
-    # print(d[100, 100, 100])
-    # print(d[:, :, 5])
-    #
-    # d[0, 0, 0] = MovingPlatform()
-    #
-    # d[-1, -2, -3] = Prism()
-    # print(d.offset)
-    #
-    # d[6, 7, 8] = Bumper()
-    # print(d.offset)
-    # print(d.map)
-    #
-    # print(d[0, 0, 0])
-    # print(d[-1, -2, -3])
-    # print(d[6, 7, 8])
-
-
-    print(time.time() - t)
